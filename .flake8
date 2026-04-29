@@ -1,2 +1,2 @@
 [flake8]
-exclude = build,dist,.venv,site-packages,llm_sdk,.uv_cache,.mypy_cache
+exclude = build,dist,.venv,site-packages,llm_sdk,.uv_cache,.mypy_cache,data,uv.lock

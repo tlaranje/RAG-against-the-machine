@@ -17,7 +17,8 @@ dependencies = [
     "bm25s>=0.1.10",
     "dspy-ai>=2.4.0",
     "pydantic>=2.8.2",
-    "rich>=13.8.1"
+    "rich>=13.8.1",
+    "autopep8>=2.3.2"
 ]
 
 [dependency-groups]
