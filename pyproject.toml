@@ -1,0 +1,32 @@
+[project]
+name = "rag-against-the-machine"
+version = "0.0.1"
+description = "RAG project at 42"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "transformers>=4.40.0",
+    "torch>=2.2.0",
+    "tqdm>=4.66.0",
+    "fire>=0.6.0",
+    "langchain>=0.2.0",
+    "langchain-community>=0.2.0",
+    "langchain-text-splitters>=0.2.0",
+    "beautifulsoup4>=4.12.0",
+    "chromadb>=0.4.0",
+    "bm25s>=0.1.10",
+    "dspy-ai>=2.4.0",
+    "pydantic>=2.8.2",
+    "rich>=13.8.1"
+]
+
+[dependency-groups]
+dev = [
+    "flake8>=7.1.1",
+    "mypy>=1.11.2",
+    "types-requests>=2.33.0.20260408",
+    "types-setuptools>=82.0.0.20260408",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
