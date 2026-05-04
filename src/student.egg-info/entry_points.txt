@@ -1,0 +1,2 @@
+[console_scripts]
+student = src.__main__:main

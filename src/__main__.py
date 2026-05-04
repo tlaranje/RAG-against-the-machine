@@ -1,63 +1,41 @@
-import os
+from src.ingestion import Chunker, Indexer, Parser
+from src.retrieval import Retriever
+from typing import TYPE_CHECKING
 from rich import print
-from rich.panel import Panel
-from rich.columns import Columns
-from src.chunkers import Chunker
+import fire
+
+if TYPE_CHECKING:
+    from src.models import MinimalSource
 
 
-def test_chunking():
-    max_size = 200
-    chunker = Chunker(max_chunk_size=max_size)
-
-    python_code = """
-        class Database:
-            def connect(self):
-                print("Connecting...")
-
-        def main():
-            db = Database()
-            db.connect()
-            if True:
-                print("Success")
-    """
-
-    markdown_text = """
-        # Project Overview
-        This is a RAG system. It uses BM25 for retrieval.
-        The goal is to answer questions about vLLM.
-
-        ## Features
-        - Fast indexing.
-        - Accurate retrieval.
-        - Intelligent chunking.
-    """
-
-    print(Panel("[bold blue]Testing Python Code Chunking[/bold blue]"))
-    py_chunks = chunker.chunk_file("test.py", python_code)
-    for i, chunk in enumerate(py_chunks):
-        print(Panel(
-            chunk,
-            title=f"Python Chunk {i+1}",
-            border_style="green",
-            expand=False)
+class Student:
+    def index(self, max_chunk_size: int = 2000) -> None:
+        parser = Parser()
+        files = parser.parse_directory("data/raw/vllm-0.10.1")
+        chunker = Chunker(max_chunk_size=max_chunk_size)
+        chunks = {}
+        for file_path, content in files.items():
+            chunks.update(chunker.chunk_file({file_path: content}))
+        indexer = Indexer()
+        indexer.index(chunks)
+        indexer.save()
+        print(
+            "[cyan]Ingestion complete! Indices saved "
+            "under data/processed/[/cyan]"
         )
 
-    print("\n" + "="*50 + "\n")
+    def search(self, prompt: str, k: int = 1) -> list["MinimalSource"]:
+        indexer = Indexer()
+        indexer.load()
+        retriever = Retriever(indexer)
+        results = retriever.search(prompt, k=k)
+        print(results)
+        return results
 
-    print(Panel("[bold magenta]Testing Text/Markdown Chunking[/bold magenta]"))
-    text_chunks = chunker.chunk_file("readme.md", markdown_text)
-    for i, chunk in enumerate(text_chunks):
-        print(Panel(
-            chunk,
-            title=f"Text Chunk {i+1}",
-            border_style="cyan",
-            expand=False)
-        )
-
-    print(f"\n[bold]Configured Max Size:[/bold] {max_size}")
-    print(f"[bold]Python Chunks generated:[/bold] {len(py_chunks)}")
-    print(f"[bold]Text Chunks generated:[/bold] {len(text_chunks)}")
+    def answer(self, prompt: str, k: int = 10) -> None:
+        results = self.search(prompt, k=k)
+        print(results)
 
 
 if __name__ == "__main__":
-    test_chunking()
+    fire.Fire(Student)

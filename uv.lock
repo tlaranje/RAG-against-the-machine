@@ -3466,6 +3466,7 @@ dependencies = [
 dev = [
     { name = "flake8" },
     { name = "mypy" },
+    { name = "types-docopt" },
     { name = "types-requests" },
     { name = "types-setuptools" },
 ]
@@ -3492,6 +3493,7 @@ requires-dist = [
 dev = [
     { name = "flake8", specifier = ">=7.1.1" },
     { name = "mypy", specifier = ">=1.11.2" },
+    { name = "types-docopt", specifier = ">=0.6.11" },
     { name = "types-requests", specifier = ">=2.33.0.20260408" },
     { name = "types-setuptools", specifier = ">=82.0.0.20260408" },
 ]
@@ -4243,6 +4245,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/7b/27/ede8cec7596e0041ba7e7b80b47d132562f56ff454313a16f6084e555c9f/typer-0.25.0.tar.gz", hash = "sha256:123eaf9f19bb40fd268310e12a542c0c6b4fab9c98d9d23342a01ff95e3ce930", size = 120150, upload-time = "2026-04-26T08:46:14.767Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/9a/72/193d4e586ec5a4db834a36bbeb47641a62f951f114ffd0fe5b1b46e8d56f/typer-0.25.0-py3-none-any.whl", hash = "sha256:ac01b48823d3db9a83c9e164338057eadbb1c9957a2a6b4eeb486669c560b5dc", size = 55993, upload-time = "2026-04-26T08:46:15.889Z" },
+]
+
+[[package]]
+name = "types-docopt"
+version = "0.6.11.20241107"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/41/42/76bad7ee3b49f06c1c577cd8403a13e98f6d70fe2bbb18a6cecf6188f6d2/types-docopt-0.6.11.20241107.tar.gz", hash = "sha256:61c44d03ac4895b5be8d40ba5cc80ce52a63d3d76777ad14669e94b5e9edf7a7", size = 3159, upload-time = "2024-11-07T15:20:41.643Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a2/91/9fc73a8ecfcc82a8be2e21f8e63fc35ffcd3a67771ac95a6dfba49a15ab8/types_docopt-0.6.11.20241107-py3-none-any.whl", hash = "sha256:4aaaa43ef4c16eaff2a5af44c0018a28981e608a5f9293500f750818edb2d97b", size = 3188, upload-time = "2024-11-07T15:20:40.221Z" },
 ]
 
 [[package]]

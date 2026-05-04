@@ -40,6 +40,7 @@ debug:
 clean:
 	@clear
 	@echo "Cleaning project cache..."
+	@$(RM) -r data/raw/vllm-0.10.1
 	@$(FIND) . -type d -name "__pycache__" -exec $(RM) {} +
 	@$(FIND) . -type d -name ".mypy_cache" -exec $(RM) {} +
 	@$(FIND) . -type d -name ".pytest_cache" -exec $(RM) {} +

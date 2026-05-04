@@ -27,7 +27,11 @@ dev = [
     "mypy>=1.11.2",
     "types-requests>=2.33.0.20260408",
     "types-setuptools>=82.0.0.20260408",
+    "types-docopt>=0.6.11",
 ]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src"]
+
+[tool.mypy]
+ignore_missing_imports = true
