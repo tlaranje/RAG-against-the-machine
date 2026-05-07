@@ -29,18 +29,21 @@ CLEAR := $(SETUP_DIRENV) && clear
 
 # === BUILD TARGETS ===
 install:
-	@$(CLEAR) && uv sync
+	@$(CLEAR)
+	@uv venv --python 3.14
+	@uv sync
 
 run:
-	@$(CLEAR) && uv run python -m src
+	@$(CLEAR) && uv run python -m student
 
 debug:
-	@$(CLEAR) && uv run python -m pdb -m src
+	@$(CLEAR) && uv run python -m pdb -m student
 
 clean:
 	@clear
 	@echo "Cleaning project cache..."
 	@$(RM) -r data/raw/vllm-0.10.1
+	@$(RM) -r .direnv
 	@$(FIND) . -type d -name "__pycache__" -exec $(RM) {} +
 	@$(FIND) . -type d -name ".mypy_cache" -exec $(RM) {} +
 	@$(FIND) . -type d -name ".pytest_cache" -exec $(RM) {} +
@@ -53,7 +56,7 @@ fclean: clean
 		echo "Deleting $(UV_PROJECT_ENVIRONMENT)..."; \
 		$(RM) "$(UV_PROJECT_ENVIRONMENT)"; \
 	fi
-	@uv cache clean
+	@uv cache clean --force
 	@if [ -d "$(HF_HOME)" ]; then \
 		echo "Deleting HF_HOME..."; \
 		$(RM) "$(HF_HOME)"; \

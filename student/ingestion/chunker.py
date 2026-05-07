@@ -1,5 +1,5 @@
 from langchain_text_splitters import Language, RecursiveCharacterTextSplitter
-from src.models import MinimalSource
+from student.models import MinimalSource
 
 
 class Chunker:

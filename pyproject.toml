@@ -30,8 +30,9 @@ dev = [
     "types-docopt>=0.6.11",
 ]
 
-[tool.hatch.build.targets.wheel]
-packages = ["src"]
-
 [tool.mypy]
 ignore_missing_imports = true
+exclude = [
+    '^data/',
+    'data'
+]
