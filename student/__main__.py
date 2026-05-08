@@ -41,8 +41,11 @@ class Main:
     def evaluate(
         self, student_answer_path: str, dataset_path: str, k: int = 1
     ) -> None:
+        ks = [1, 3, 5, 10]
         evaluation = Evaluator()
-        evaluation.evaluate(student_answer_path, dataset_path, k)
+        for ki in ks:
+            recall = evaluation.evaluate(student_answer_path, dataset_path, ki)
+            print(f"Recall@{ki}: {recall:.3f}")
 
 
 if __name__ == "__main__":
@@ -50,4 +53,4 @@ if __name__ == "__main__":
         fire.Fire(Main)
     except Exception as e:
         traceback.print_exc()
-        print(f"[bold red]Erro: {e}[/bold red]")
+        print(f"[bold red]Error:\n    {e}[/bold red]")
