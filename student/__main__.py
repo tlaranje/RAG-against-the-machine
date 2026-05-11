@@ -3,9 +3,11 @@ from student.evaluation import Evaluator
 from student.retrieval import Retriever
 from student.generation import Generator
 from typing import TYPE_CHECKING
+from rich.panel import Panel
 from rich import print
 import traceback
 import fire
+import os
 
 if TYPE_CHECKING:
     from student.models import MinimalSource
@@ -22,8 +24,8 @@ class Main:
     def index(self, max_chunk_size: int = 2000) -> None:
         self.indexer.index(max_chunk_size=max_chunk_size)
         print(
-            "[cyan]Ingestion complete! Indices saved "
-            "under data/processed/[/cyan]"
+            "\n[cyan]Ingestion complete! Indices saved "
+            "under data/processed/[/cyan]\n"
         )
 
     def search_dataset(
@@ -41,7 +43,11 @@ class Main:
         sources = self.retriever.search(prompt, k=k)
         generator = Generator()
         result = generator.answer(prompt, sources)
-        print(result)
+        os.system("clear")
+        print(Panel.fit(
+            f"[bold cyan]Prompt: {prompt}[/bold cyan]"
+            f"[bold green]\nAnswer: {result}[/bold green]",
+        ))
 
     def answer_dataset(
         self,

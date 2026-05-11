@@ -1,10 +1,15 @@
-from student.models import (
-    RagDataset, UnansweredQuestion, MinimalSearchResults, StudentSearchResults
-)
 from typing import TYPE_CHECKING
+from student.utils import bar
 import bm25s
 import json
 import os
+
+from student.models import (
+    MinimalSearchResults,
+    RagDataset,
+    StudentSearchResults,
+    UnansweredQuestion,
+)
 
 if TYPE_CHECKING:
     from student.ingestion import Indexer
@@ -12,56 +17,61 @@ if TYPE_CHECKING:
 
 
 class Retriever:
-    def __init__(self, indexer: Indexer) -> None:
+    def __init__(self, indexer: "Indexer") -> None:
         self.indexer = indexer
 
     def search(self, prompt: str, k: int = 1) -> list["MinimalSource"]:
-        prompt_tokens = bm25s.tokenize(prompt)
-        results, scores = self.indexer.bm25.retrieve(prompt_tokens, k=k)
-        return [self.indexer.metadata[i] for i in results[0]]
+        res, _ = self.indexer.bm25.retrieve(bm25s.tokenize(prompt), k=k)
+        return [self.indexer.metadata[i] for i in res[0]]
 
-    def search_dataset(
-        self, data_path: str, k: int, save_dirr: str
-    ) -> None:
-        self.indexer.load()
+    def search_dataset(self, data_path: str, k: int, save_dir: str) -> None:
+        # 1. Load Index (Yellow)
+        with bar(desc="Loading index", color="yellow") as pbar:
+            self.indexer.load()
+            pbar.update(1)
 
-        try:
-            questions: list[UnansweredQuestion] = []
-
+        # 2. Load Dataset (Blue)
+        with bar(desc="Loading dataset", color="blue") as pbar:
             with open(data_path, "r") as fd:
                 raw_data = json.load(fd)
+            pbar.update(1)
 
-            for question_list in raw_data.values():
-                for data in question_list:
-                    questions.append(UnansweredQuestion(
-                        question_id=str(data['question_id']),
-                        question=str(data['question'])
-                    ))
+        # 3. Parse Questions (Magenta)
+        flat_data = [q for sublist in raw_data.values() for q in sublist]
+        questions = []
+        with bar(
+            total=len(flat_data), desc="Parsing", color="magenta"
+        ) as pbar:
+            for d in flat_data:
+                questions.append(UnansweredQuestion(
+                    question_id=str(d['question_id']),
+                    question=str(d['question'])
+                ))
+                pbar.update(1)
 
-            rag = RagDataset(rag_questions=questions)
-            search_results: list = []
+        rag = RagDataset(rag_questions=questions)
 
-            for curr_q in rag.rag_questions:
-                sources = self.search(curr_q.question, k=k)
-
-                search_results.append(MinimalSearchResults(
-                    question_id=curr_q.question_id,
-                    question=curr_q.question,
+        # 4. Search (Green)
+        results = []
+        with bar(
+            total=len(rag.rag_questions), desc="Searching", color="green"
+        ) as pbar:
+            for q in rag.rag_questions:
+                sources = self.search(q.question, k=k)
+                results.append(MinimalSearchResults(
+                    question_id=q.question_id,
+                    question=q.question,
                     retrieved_sources=sources
                 ))
+                pbar.update(1)
 
-            s_res = StudentSearchResults(search_results=search_results, k=k)
+        # 5. Save (Cyan)
+        os.makedirs(save_dir, exist_ok=True)
+        file_name = os.path.basename(data_path)
+        out_path = os.path.join(save_dir, file_name)
 
-            os.makedirs(save_dirr.rsplit('/', 1)[0], exist_ok=True)
-            os.makedirs(save_dirr, exist_ok=True)
-
-            file_name = data_path.rsplit('/', 1)[1]
-            with open(save_dirr + "/" + file_name, "w") as fd:
+        with bar(desc="Saving", color="cyan") as pbar:
+            s_res = StudentSearchResults(search_results=results, k=k)
+            with open(out_path, "w") as fd:
                 json.dump(s_res.model_dump(), fd, indent=4)
-
-        except FileNotFoundError:
-            raise FileNotFoundError(f"File not found: {data_path}")
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Invalid JSON format in '{data_path}': {e}")
-        except Exception as e:
-            raise e
+            pbar.update(1)
