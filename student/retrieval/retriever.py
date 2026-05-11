@@ -8,7 +8,7 @@ import os
 
 if TYPE_CHECKING:
     from student.ingestion import Indexer
-    from src.models import MinimalSource
+    from student.models import MinimalSource
 
 
 class Retriever:

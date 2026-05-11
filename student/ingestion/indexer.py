@@ -34,7 +34,7 @@ class Indexer:
             json.dump([m.model_dump() for m in self.metadata], fd, indent=4)
 
     def load(self) -> None:
-        self.bm25 = bm25s.BM25.load(self.bm25_path)
+        self.bm25 = bm25s.BM25.load(self.bm25_path, mmap=True)
 
         with open(self.metadata_path, "r") as fd:
             data = json.load(fd)

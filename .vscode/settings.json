@@ -1,0 +1,20 @@
+{
+  "python.analysis.exclude": [
+    "**/data/**",
+    "**/processed/**",
+    "**/output/**",
+    "**/.cache/**"
+  ],
+  "files.watcherExclude": {
+    "**/data/**": true,
+    "**/processed/**": true,
+    "**/output/**": true,
+    "**/.cache/**": true
+  },
+  "search.exclude": {
+    "**/data/**": true,
+    "**/processed/**": true,
+    "**/output/**": true
+  },
+  "python.analysis.diagnosticMode": "openFilesOnly"
+}

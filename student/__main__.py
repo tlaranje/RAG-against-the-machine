@@ -1,6 +1,7 @@
 from student.ingestion import Indexer, Parser
 from student.evaluation import Evaluator
 from student.retrieval import Retriever
+from student.generation import Generator
 from typing import TYPE_CHECKING
 from rich import print
 import traceback
@@ -31,12 +32,24 @@ class Main:
         self.retriever.search_dataset(dataset_path, k, save_directory)
 
     def search(self, prompt: str, k: int = 1) -> list["MinimalSource"]:
+        self.indexer.load()
         results = self.retriever.search(prompt, k=k)
         return results
 
-    def answer(self, prompt: str, k: int = 1) -> None:
-        results = self.search(prompt, k=k)
-        print(results)
+    def answer(self, prompt: str, k: int = 10) -> None:
+        self.indexer.load()
+        sources = self.retriever.search(prompt, k=k)
+        generator = Generator()
+        result = generator.answer(prompt, sources)
+        print(result)
+
+    def answer_dataset(
+        self,
+        student_search_results_path: str,
+        save_directory: str = "data/output/search_results_and_answer"
+    ) -> None:
+        generator = Generator()
+        generator.answer_dataset(student_search_results_path, save_directory)
 
     def evaluate(
         self, student_answer_path: str, dataset_path: str, k: int = 1
