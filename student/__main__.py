@@ -38,16 +38,17 @@ class Main:
         results = self.retriever.search(prompt, k=k)
         return results
 
-    def answer(self, prompt: str, k: int = 1) -> None:
+    def answer(self, prompt: str, k: int = 10) -> None:
         self.indexer.load()
+
         sources = self.retriever.search(prompt, k=k)
+
         generator = Generator()
-        result = generator.answer(prompt, sources)
-        os.system("clear")
-        print(Panel.fit(
-            f"[bold cyan]Prompt: {prompt}[/bold cyan]"
-            f"[bold green]\nAnswer: {result}[/bold green]",
-        ))
+
+        generator.answer(
+            question=prompt,
+            context=sources,
+        )
 
     def answer_dataset(
         self,

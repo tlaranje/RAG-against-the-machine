@@ -16,5 +16,6 @@
     "**/processed/**": true,
     "**/output/**": true
   },
-  "python.analysis.diagnosticMode": "openFilesOnly"
+  "python.analysis.diagnosticMode": "openFilesOnly",
+  "python-envs.defaultEnvManager": "ms-python.python:system"
 }

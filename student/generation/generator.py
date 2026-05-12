@@ -1,40 +1,32 @@
-"""Answer generation module using a small local LLM (Qwen3-0.6B)."""
-
 from student.models import (
-    MinimalAnswer,
-    MinimalSearchResults,
-    StudentSearchResults,
-    StudentSearchResultsAndAnswer,
+    MinimalAnswer, MinimalSearchResults,
+    StudentSearchResults, StudentSearchResultsAndAnswer,
 )
 
-from transformers import (  # type: ignore
-    AutoModelForCausalLM,
-    AutoTokenizer,
+from transformers import (
+    AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig,
 )
 
 from student.utils import bar
 from threading import Thread
-from rich import print  # noqa: A001
+from rich import print
 from typing import Any
 
 import torch as t
-import time
 import json
 import os
 
 
 class SmallLLM:
-    """Wrapper around a small causal LLM loaded on the best available device.
+    """Small local LLM wrapper optimised for fast inference."""
 
-    Args:
-        model_name: HuggingFace model identifier.
-    """
+    def __init__(self, model_name: str = "Qwen/Qwen3-0.6B") -> None:
+        """
+        Load tokenizer and model on the best available device.
 
-    def __init__(
-        self,
-        model_name: str = "Qwen/Qwen3-0.6B",
-    ) -> None:
-        """Initialise tokeniser and model, move to the best device."""
+        Args:
+            model_name: HuggingFace model identifier.
+        """
         if t.cuda.is_available():
             self.device = t.device("cuda")
         else:
@@ -46,94 +38,99 @@ class SmallLLM:
             else t.float32
         )
 
-        self.tokenizer: Any = AutoTokenizer.from_pretrained(
-            model_name
-        )
+        self.tokenizer: Any = AutoTokenizer.from_pretrained(model_name)
 
         self.tokenizer.pad_token = (
-            self.tokenizer.pad_token
-            or self.tokenizer.eos_token
+            self.tokenizer.pad_token or self.tokenizer.eos_token
         )
 
         self.tokenizer.padding_side = "left"
         self.tokenizer.truncation_side = "left"
 
-        self.model: Any = AutoModelForCausalLM.from_pretrained(
-            model_name,
-            torch_dtype=self.dtype,
-            low_cpu_mem_usage=True,
-        )
+        if self.device.type == "cuda":
+            # 4-bit quantization drastically reduces VRAM usage
+            # and improves inference throughput on consumer GPUs.
+            #
+            # This allows the model to:
+            # - fit into smaller GPUs
+            # - reduce memory bandwidth pressure
+            # - generate responses significantly faster
+            quantization_config = BitsAndBytesConfig(
+                load_in_4bit=True, bnb_4bit_compute_dtype=t.float16
+            )
 
-        self.model.to(self.device)
+            self.model: Any = AutoModelForCausalLM.from_pretrained(
+                model_name, quantization_config=quantization_config,
+                low_cpu_mem_usage=True, device_map="auto"
+            )
+
+            # Enable cuDNN autotuner for faster CUDA kernels.
+            t.backends.cudnn.benchmark = True
+
+        else:
+            self.model = AutoModelForCausalLM.from_pretrained(
+                model_name, torch_dtype=self.dtype, low_cpu_mem_usage=True,
+            )
+
+            self.model.to(self.device)
+
         self.model.eval()
 
-        if self.device.type == "cuda":
-            t.backends.cudnn.benchmark = True  # type: ignore
-
-        print(
-            f"[bold green]Loaded "
-            f"{model_name} on "
-            f"{self.device}[/bold green]"
-        )
+        print(f"[bold green]Loaded {model_name} on {self.device}[/bold green]")
 
 
 class Generator:
-    """Batch answer generator using SmallLLM and BM25 search results."""
+    """Generate answers using BM25 retrieval + local LLM."""
 
     def __init__(self) -> None:
-        """Initialise the generator by loading the LLM."""
+        """Initialise the answer generator."""
         self.llm = SmallLLM()
 
     @staticmethod
     def batch_questions(
-        questions: list[MinimalSearchResults],
+        questions: list[MinimalSearchResults]
     ) -> list[list[MinimalSearchResults]]:
-        """Split questions into sorted batches for efficient processing.
+        """
+        Split questions into batches.
+
+        Questions are sorted by length to reduce padding overhead
+        during batched inference.
 
         Args:
-            questions: List of search results with questions.
+            questions: List of search results.
 
         Returns:
-            List of batches, each containing up to 32 questions.
+            List of question batches.
         """
-        batch_size = 32
+        batch_size = 16
 
-        questions = sorted(
-            questions,
-            key=lambda q: len(q.question),
-        )
+        questions = sorted(questions, key=lambda q: len(q.question))
 
         return [
             questions[i:i + batch_size]
             for i in range(0, len(questions), batch_size)
         ]
 
-    def build_prompt(
-        self,
-        result: MinimalSearchResults,
-    ) -> str:
-        """Build a chat prompt string from a search result.
+    def build_prompt(self, result: MinimalSearchResults) -> str:
+        """
+        Build a chat prompt from a retrieved context.
 
         Args:
-            result: A search result containing question and context.
+            result: Search result containing question and context.
 
         Returns:
-            A formatted prompt string ready for tokenisation.
+            Formatted prompt string.
         """
-        context = (
-            result.content  # type: ignore[attr-defined]
-            if hasattr(result, "content") and result.content  # type: ignore
-            else "No context available."
-        )
-
-        context = context[:1000]
+        context = (result.content[:500] if result.content else "None")
 
         messages = [
             {
                 "role": "system",
                 "content": (
-                    "Answer in 2 complete sentences. "
-                    "Use only the context."
+                    "You are a helpful assistant. "
+                    "Always respond in English. "
+                    "Answer in 2 complete sentences "
+                    "using only the context."
                 ),
             },
             {
@@ -145,79 +142,61 @@ class Generator:
             },
         ]
 
-        return self.llm.tokenizer.apply_chat_template(  # type: ignore
-            messages,
-            tokenize=False,
-            add_generation_prompt=True,
+        return self.llm.tokenizer.apply_chat_template(
+            messages, tokenize=False, add_generation_prompt=True,
             enable_thinking=False,
         )
 
     def answer_batch(
-        self,
-        batch: list[MinimalSearchResults],
-        batch_idx: int,
-    ) -> list[tuple[str, float]]:
-        """Generate answers for a batch of questions.
+        self, batch: list[MinimalSearchResults], batch_idx: int,
+    ) -> list[str]:
+        """
+        Generate answers for a batch of questions.
 
         Args:
-            batch: A list of search results to answer.
-            batch_idx: Index of the current batch (used for progress display).
+            batch: Batch of retrieved search results.
+            batch_idx: Batch index used for progress display.
 
         Returns:
-            A list of (answer_text, elapsed_per_item) tuples.
+            Generated answers.
         """
         tokenizer = self.llm.tokenizer
 
-        prompts = [
-            self.build_prompt(result)
-            for result in batch
-        ]
+        prompts = [self.build_prompt(result) for result in batch]
 
         inputs = tokenizer(
-            prompts,
-            return_tensors="pt",
-            padding=True,
-            truncation=True,
-            max_length=320,
-            pad_to_multiple_of=8,
+            prompts, return_tensors="pt",
+            padding=True, truncation=True,
+            max_length=512, pad_to_multiple_of=8,
         ).to(self.llm.device)
 
         outputs: Any = None
         error: Exception | None = None
 
         def run_model() -> None:
-            """Run the model in a background thread."""
+            """Run generation in a background thread."""
             nonlocal outputs
             nonlocal error
 
             try:
                 with t.inference_mode():
                     outputs = self.llm.model.generate(
-                        **inputs,
-                        max_new_tokens=40,
-                        do_sample=False,
-                        use_cache=True,
-                        num_beams=1,
-                        temperature=None,
-                        top_p=None,
-                        repetition_penalty=1.1,
+                        **inputs, max_new_tokens=100,
+                        do_sample=False, use_cache=True,
+                        num_beams=1, repetition_penalty=1.3,
                         pad_token_id=tokenizer.pad_token_id,
                         eos_token_id=tokenizer.eos_token_id,
                     )
             except Exception as exc:
                 error = exc
 
-        start = time.perf_counter()
-
         thread = Thread(target=run_model)
         thread.start()
 
         with bar(
-            total=None,
-            desc=f"Batch {batch_idx}",
-            position=1,
-            leave=False,
-            color="red",
+            total=None, desc=f"Batch {batch_idx}",
+            position=1, leave=False,
+            color="red"
         ) as pbar:
             while thread.is_alive():
                 thread.join(timeout=0.05)
@@ -231,139 +210,129 @@ class Generator:
         if outputs is None:
             raise RuntimeError("Generation failed.")
 
-        elapsed = time.perf_counter() - start
-        answers: list[tuple[str, float]] = []
+        answers: list[str] = []
 
         for i, output in enumerate(outputs):
-            input_len = int(
-                inputs["attention_mask"][i].sum()
-            )
+            # Remove the original prompt tokens from the generated output.
+            #
+            # The model returns:
+            # [prompt tokens] + [generated tokens]
+            #
+            # We only want the generated answer.
+            prompt_len = inputs["input_ids"][i].shape[0]
+
+            generated_tokens = output[prompt_len:]
 
             answer = tokenizer.decode(
-                output[input_len:],
-                skip_special_tokens=True,
-            )
+                generated_tokens, skip_special_tokens=True,
+            ).strip()
 
-            answers.append((
-                " ".join(answer.split()),
-                elapsed / len(batch),
-            ))
+            # Remove possible leftover assistant tags or thinking tags.
+            answer = answer.replace("<think>", "")
+            answer = answer.replace("</think>", "")
+            answer = answer.replace("assistant", "")
+
+            # Normalise whitespace.
+            answer = " ".join(answer.split())
+
+            answers.append(answer)
 
         return answers
 
-    def answer_dataset(
-        self,
-        student_search_results_path: str,
-        save_directory: str,
-    ) -> None:
-        """Generate answers for all questions in a search results file.
+    def answer(self, question: str, context: list[str] | str) -> None:
+        """
+        Answer a single question and save the result.
 
         Args:
-            student_search_results_path: Path to the JSON file produced
-                by ``search_dataset``.
-            save_directory: Directory where the output JSON will be saved.
-
-        Raises:
-            FileNotFoundError: If the input path does not exist.
-            RuntimeError: If model generation fails.
+            question: User question.
+            context: Retrieved context passages.
         """
-        with open(
-            student_search_results_path,
-            "r",
-            encoding="utf-8",
-        ) as fd:
+        if isinstance(context, list):
+            context = "\n".join(context)
+
+        result = MinimalSearchResults(
+            question_id="single", question=question,
+            retrieved_sources=[], content=context
+        )
+
+        answer_text = self.answer_batch([result], 1)[0]
+
+        output = {
+            "question": question, "answer": answer_text, "context": context,
+        }
+
+        os.makedirs("data/output", exist_ok=True)
+
+        output_path = "data/output/single_answer.json"
+
+        with open(output_path, "w", encoding="utf-8") as fd:
+            json.dump(output, fd, indent=4, ensure_ascii=False)
+
+        print(f"[bold green]Saved answer to:\n{output_path}[/bold green]")
+
+    def answer_dataset(
+        self, student_search_results_path: str, save_directory: str,
+    ) -> None:
+        """
+        Generate answers for a full dataset.
+
+        Args:
+            student_search_results_path:
+                Path to search results JSON.
+            save_directory:
+                Directory where outputs will be saved.
+        """
+        with open(student_search_results_path, "r", encoding="utf-8") as fd:
             raw = json.load(fd)
 
         results = StudentSearchResults.model_validate(raw)
+
         total = len(results.search_results)
+
         batches = self.batch_questions(results.search_results)
 
         os.system("clear")
 
-        print(
-            f"[bold green]Loaded "
-            f"{total} questions[/bold green]"
-        )
+        print(f"[bold green]Loaded {total} questions[/bold green]")
 
         answers: list[MinimalAnswer] = []
-        timings: list[tuple[float, str]] = []
 
-        for batch_idx, batch in enumerate(
-            bar(
-                data=batches,
-                desc="Generating answers",
-                position=0,
-                leave=True,
-                color="green",
-            ),
-            start=1,
+        for batch_idx, batch in enumerate(bar(
+            data=batches, desc="Generating answers",
+            position=0, leave=True, color="green"), start=1
         ):
             batch_answers = self.answer_batch(batch, batch_idx)
 
-            for result, (answer_text, elapsed) in zip(
-                batch, batch_answers
-            ):
-                timings.append((elapsed, result.question))
+            for result, answer_text in zip(batch, batch_answers):
+                answers.append(MinimalAnswer(
+                    question_id=result.question_id,
+                    question=result.question,
+                    retrieved_sources=result.retrieved_sources,
+                    answer=answer_text
+                ))
 
-                answers.append(
-                    MinimalAnswer(
-                        question_id=result.question_id,
-                        question=result.question,
-                        retrieved_sources=result.retrieved_sources,
-                        answer=answer_text,
-                    )
-                )
-
-        print(
-            f"[bold green]"
-            f"Processed {total}/{total} questions"
-            f"[/bold green]"
-        )
-
-        os.makedirs("data/output", exist_ok=True)
-
-        with open(
-            "data/output/time.txt",
-            "w",
-            encoding="utf-8",
-        ) as fd:
-            for rank, (elapsed, question) in enumerate(
-                sorted(timings, key=lambda x: x[0]),
-                start=1,
-            ):
-                truncated = (
-                    question[:60] + "..."
-                    if len(question) > 60
-                    else question
-                )
-                fd.write(
-                    f"{rank:>3}. {elapsed:6.2f}s {truncated}\n"
-                )
+        print(f"[bold green]Processed {total}/{total} questions[/bold green]")
 
         output = StudentSearchResultsAndAnswer(
-            search_results=answers,
-            k=results.k,
+            search_results=answers, k=results.k,
         )
 
         os.makedirs(save_directory, exist_ok=True)
 
         file_name = os.path.basename(student_search_results_path)
+
         output_path = os.path.join(save_directory, file_name)
 
-        with open(
-            output_path,
-            "w",
-            encoding="utf-8",
-        ) as fd:
+        with open(output_path, "w", encoding="utf-8") as fd:
             json.dump(
-                output.model_dump(),
-                fd,
-                indent=4,
-                ensure_ascii=False,
+                output.model_dump(
+                    exclude={
+                        "search_results": {
+                            "__all__": {"content"}
+                            }
+                        }
+                ),
+                fd, indent=4, ensure_ascii=False,
             )
 
-        print(
-            f"\n[bold green]"
-            f"Saved results to:\n{output_path}"
-            f"[/bold green]"
-        )
+        print(f"\n[bold green]Saved results to:\n{output_path}[/bold green]")
