@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import List
+from typing import List, Optional
 import uuid
 
 
@@ -27,6 +27,7 @@ class MinimalSearchResults(BaseModel):
     question_id: str
     question: str
     retrieved_sources: List[MinimalSource]
+    content: Optional[str] = None
 
 
 class MinimalAnswer(MinimalSearchResults):

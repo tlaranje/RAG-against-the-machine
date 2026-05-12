@@ -38,7 +38,7 @@ class Main:
         results = self.retriever.search(prompt, k=k)
         return results
 
-    def answer(self, prompt: str, k: int = 10) -> None:
+    def answer(self, prompt: str, k: int = 1) -> None:
         self.indexer.load()
         sources = self.retriever.search(prompt, k=k)
         generator = Generator()

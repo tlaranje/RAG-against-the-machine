@@ -13,14 +13,13 @@ from student.models import (
 
 if TYPE_CHECKING:
     from student.ingestion import Indexer
-    from student.models import MinimalSource
 
 
 class Retriever:
     def __init__(self, indexer: "Indexer") -> None:
         self.indexer = indexer
 
-    def search(self, prompt: str, k: int = 1) -> list["MinimalSource"]:
+    def search(self, prompt: str, k: int = 1) -> list[dict]:
         res, _ = self.indexer.bm25.retrieve(bm25s.tokenize(prompt), k=k)
         return [self.indexer.metadata[i] for i in res[0]]
 
@@ -57,11 +56,19 @@ class Retriever:
             total=len(rag.rag_questions), desc="Searching", color="green"
         ) as pbar:
             for q in rag.rag_questions:
-                sources = self.search(q.question, k=k)
+                sources_data = self.search(q.question, k=k)
+
+                retrieved_sources = [s["source"] for s in sources_data]
+
+                main_content = (
+                    sources_data[0]["content"] if sources_data else ""
+                )
+
                 results.append(MinimalSearchResults(
                     question_id=q.question_id,
                     question=q.question,
-                    retrieved_sources=sources
+                    retrieved_sources=retrieved_sources,
+                    content=main_content
                 ))
                 pbar.update(1)
 
