@@ -7,3 +7,4 @@ data/output
 moulinette/
 data/raw/vllm-0.10.1
 uv.lock
+models

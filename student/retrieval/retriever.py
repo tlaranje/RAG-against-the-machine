@@ -60,9 +60,10 @@ class Retriever:
 
                 retrieved_sources = [s["source"] for s in sources_data]
 
-                main_content = (
-                    sources_data[0]["content"] if sources_data else ""
+                main_content = "\n\n".join(
+                    s["content"] for s in sources_data
                 )
+                main_content = main_content[:2000]
 
                 results.append(MinimalSearchResults(
                     question_id=q.question_id,
