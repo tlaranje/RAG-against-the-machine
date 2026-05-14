@@ -12,9 +12,7 @@ if TYPE_CHECKING:
 
 class Indexer:
     def __init__(
-        self,
-        parser: "Parser",
-        base_path: str = "data/processed"
+        self, parser: "Parser", base_path: str = "data/processed"
     ) -> None:
         self.parser = parser
         self.base_path = base_path

@@ -2,17 +2,11 @@ from student.ingestion import Indexer, Parser
 from student.evaluation import Evaluator
 from student.retrieval import Retriever
 from student.generation import Generator
-from typing import TYPE_CHECKING
-from rich.panel import Panel
 from rich import print
 import traceback
 import fire
-import os
 
-if TYPE_CHECKING:
-    from student.models import MinimalSource
-
-SAVE_DIRR = "data/output/search_results"
+SAVE_DIRR = "data/output/"
 
 
 class Main:
@@ -33,21 +27,26 @@ class Main:
     ) -> None:
         self.retriever.search_dataset(dataset_path, k, save_directory)
 
-    def search(self, prompt: str, k: int = 1) -> list["MinimalSource"]:
+    def search(self, prompt: str, k: int = 1) -> None:
         self.indexer.load()
         results = self.retriever.search(prompt, k=k)
-        return results
+        print(results)
 
     def answer(self, prompt: str, k: int = 10) -> None:
         self.indexer.load()
 
         sources = self.retriever.search(prompt, k=k)
 
+        # extrai só o texto de cada chunk
+        context = "\n".join(
+            s["content"] for s in sources if s.get("content")
+        )
+
         generator = Generator()
 
         generator.answer(
             question=prompt,
-            context=sources,
+            context=context,
         )
 
     def answer_dataset(

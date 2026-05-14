@@ -8,7 +8,6 @@ class Parser:
             for filename in filenames:
                 if not filename.endswith(('.png', '.jpg', '.ico')):
                     file_path = os.path.join(root, filename)
-                    print(file_path)
                     files[file_path] = self.parse_file(file_path)
         return files
 

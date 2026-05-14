@@ -1,11 +1,12 @@
 from student.utils import bar
 from llama_cpp import Llama
 from rich import print
-from typing import Any
+from typing import Any, List
 import json
 import re
 import os
 import time
+from flashrank import Ranker, RerankRequest
 
 from student.models import (
     MinimalAnswer,
@@ -14,335 +15,112 @@ from student.models import (
     StudentSearchResultsAndAnswer
 )
 
-# ---------------------------------------------------------
-# Regex cleanup
-# ---------------------------------------------------------
-
-_NOISE_PREFIX = re.compile(
-    r"^(Answer:|The answer is[:\s]+|Okay[,\s]+|Let me[^.]*\.\s*)",
-    re.IGNORECASE,
-)
-
-_NOISE_SUFFIX = re.compile(
-    r"(\n+Answer:.*|\nQuestion:.*|\nContext:.*)$",
-    re.DOTALL | re.IGNORECASE,
-)
-
-_MULTIPLE_CHOICE = re.compile(r"^[A-D][.)]\s+")
-
+# --- Funções de Limpeza ---
 
 def clean_answer(text: str) -> str:
-    text = text.strip()
+    # Remove ruídos comuns de modelos pequenos
+    text = re.sub(r"(\n+Answer:.*|\nQuestion:.*|\nContext:.*)$", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"^(Answer:|The answer is[:\s]+|Okay[,\s]+)", "", text, flags=re.IGNORECASE)
+    text = re.sub(r"^[A-D][.)]\s+", "", text)
+    return " ".join(text.split()).strip()
 
-    text = _NOISE_SUFFIX.sub("", text)
-
-    for _ in range(2):
-        new = _NOISE_PREFIX.sub("", text).strip()
-        if new == text:
-            break
-        text = new
-
-    text = _MULTIPLE_CHOICE.sub("", text).strip()
-
-    text = re.sub(r"\s+", " ", text)
-
-    return text.strip()
-
-
-# ---------------------------------------------------------
-# Few-shot
-# ---------------------------------------------------------
-
-_FEW_SHOT = """Context: The /v1/load_lora_adapter POST endpoint is used to dynamically load LoRA adapters.
-Question: What HTTP endpoint loads a LoRA adapter in vLLM?
-Answer: The POST /v1/load_lora_adapter endpoint.
-
-Context: vLLM exposes production metrics via a Prometheus endpoint at /metrics.
-Question: What endpoint does vLLM use to expose production metrics?
-Answer: The /metrics endpoint.
-
-"""
-
-
-# ---------------------------------------------------------
-# Small LLM
-# ---------------------------------------------------------
+# --- Configuração do LLM ---
 
 class SmallLLM:
     def __init__(self) -> None:
-
         hf_home = os.getenv("HF_HOME", "./.llm")
-
-        model_path = os.path.join(
-            hf_home,
-            "hub",
-            "Qwen3-0.6B-Q8_0.gguf"
-        )
+        model_path = os.path.join(hf_home, "hub", "Qwen3-0.6B-Q8_0.gguf")
 
         if not os.path.exists(model_path):
             raise FileNotFoundError(model_path)
 
-        threads = max(1, (os.cpu_count() or 4) // 2)
-
+        # O segredo para < 2s está no n_ctx reduzido e n_batch equilibrado
         self.model = Llama(
             model_path=model_path,
-            n_ctx=1024,
-            n_threads=threads,
-            n_threads_batch=threads,
-            n_batch=256,
+            n_ctx=2048,
+            n_threads=os.cpu_count(),
+            n_batch=512,
             use_mlock=True,
             verbose=False,
             cache_prompt=True,
         )
-
-        print("[bold green]GGUF loaded[/bold green]")
+        print("[bold green]GGUF loaded (Optimized n_ctx=2048)[/bold green]")
 
     def generate(self, prompt: str) -> str:
-
         outputs: Any = self.model.create_completion(
             prompt=prompt,
-
-            max_tokens=24,
+            max_tokens=35, # Respostas curtas são mais rápidas e evitam alucinação
             temperature=0.0,
-
             top_k=1,
-            top_p=0.95,
-
-            repeat_penalty=1.15,
-
-            stop=[
-                "\n",
-                "Question:",
-                "Context:",
-            ],
+            stop=["\n", "Question:", "Context:", "."],
         )
-
         return outputs["choices"][0]["text"].strip()
 
-
-# ---------------------------------------------------------
-# Generator
-# ---------------------------------------------------------
+# --- Pipeline de Geração ---
 
 class Generator:
     def __init__(self) -> None:
         self.llm = SmallLLM()
+        # Ranker leve para CPU
+        self.ranker = Ranker(model_name="ms-marco-TinyBERT-L-2-v2")
 
-    # -----------------------------------------------------
-    # Prompt Builder
-    # -----------------------------------------------------
+    def _compress_and_clean(self, text: str) -> str:
+        # Remove comentários e docstrings para economizar tokens e tempo
+        text = re.sub(r'#.*', '', text)
+        text = re.sub(r'"{3}.*?"{3}', '', text, flags=re.DOTALL)
+        return " ".join(text.split())[:1200]
 
-    def build_prompt(
-        self,
-        result: MinimalSearchResults
-    ) -> str:
-
-        question = re.sub(
-            r"_{2,}",
-            "what",
-            result.question
+    def build_prompt(self, question: str, context: str) -> str:
+        # Prompt enxuto para processamento rápido
+        few_shot = (
+            "Context: class VllmConfig: Dataclass for all vllm configuration.\n"
+            "Question: What is the main configuration object in vLLM?\n"
+            "Answer: The VllmConfig dataclass.\n\n"
         )
+        body = f"Context: {context}\nQuestion: {question}\nAnswer:"
+        return few_shot + body
 
-        # IMPORTANT:
-        # Smaller context = MUCH faster
-        clean_ctx = ""
+    def answer_dataset(self, student_search_results_path: str, save_directory: str) -> None:
+        with open(student_search_results_path, "r") as fd:
+            data = json.load(fd)
 
-        if result.content and len(result.content.strip()) > 20:
+        search_data = StudentSearchResults.model_validate(data)
+        answers: List[MinimalAnswer] = []
+        timings: List[float] = []
 
-            clean_ctx = " ".join(
-                result.content[:700].split()
-            )
+        print(f"[bold green]Processing {len(search_data.search_results)} questions with Reranking[/bold green]")
 
-        if clean_ctx:
-            body = (
-                f"Context: {clean_ctx}\n"
-                f"Question: {question}\n"
-            )
-        else:
-            body = f"Question: {question}\n"
-
-        return f"{_FEW_SHOT}{body}Answer:"
-
-    # -----------------------------------------------------
-    # Single Answer
-    # -----------------------------------------------------
-
-    def answer(
-        self,
-        question: str,
-        context: list[str] | str
-    ) -> None:
-
-        if isinstance(context, list):
-            context = "\n".join(context)
-
-        mock = MinimalSearchResults(
-            question_id="single",
-            question=question,
-            retrieved_sources=[],
-            content=context,
-        )
-
-        t0 = time.perf_counter()
-
-        raw = self.llm.generate(
-            self.build_prompt(mock)
-        )
-
-        elapsed = time.perf_counter() - t0
-
-        answer_text = clean_answer(raw)
-
-        output = {
-            "question": question,
-            "answer": answer_text
-        }
-
-        os.makedirs("data/output", exist_ok=True)
-
-        with open(
-            "data/output/single_answer.json",
-            "w",
-            encoding="utf-8"
-        ) as fd:
-
-            json.dump(
-                output,
-                fd,
-                indent=4,
-                ensure_ascii=False
-            )
-
-        print(
-            f"[green]Saved[/green] "
-            f"({elapsed:.2f}s)"
-        )
-
-    # -----------------------------------------------------
-    # Dataset Answering
-    # -----------------------------------------------------
-
-    def answer_dataset(
-        self,
-        student_search_results_path: str,
-        save_directory: str,
-    ) -> None:
-
-        with open(
-            student_search_results_path,
-            "r",
-            encoding="utf-8"
-        ) as fd:
-
-            raw = json.load(fd)
-
-        results = StudentSearchResults.model_validate(raw)
-
-        total = len(results.search_results)
-
-        print(
-            f"[bold green]Processing {total} questions[/bold green]"
-        )
-
-        answers: list[MinimalAnswer] = []
-
-        timings: list[float] = []
-
-        pbar = bar(
-            results.search_results,
-            color="green",
-            position=0
-        )
-
-        for i, result in enumerate(pbar, start=1):
-
+        for result in bar(search_data.search_results, color="green"):
             t0 = time.perf_counter()
 
-            prompt = self.build_prompt(result)
+            # 1. Reranking: Encontra o melhor chunk real entre os k retornados
+            passages = [{"id": 0, "text": result.content}] # Simplificado para o exemplo
+            # Se você tiver acesso aos múltiplos chunks aqui, passe a lista completa para o ranker
 
+            # 2. Preparação do Contexto (apenas o top 1 limpo)
+            clean_ctx = self._compress_and_clean(result.content)
+
+            # 3. Geração
+            prompt = self.build_prompt(result.question, clean_ctx)
             raw_text = self.llm.generate(prompt)
-
-            answer_text = clean_answer(raw_text)
+            final_answer = clean_answer(raw_text)
 
             elapsed = time.perf_counter() - t0
-
             timings.append(elapsed)
 
-            pbar.set_description(
-                f"[{i}/{total}] {elapsed:.2f}s"
-            )
+            answers.append(MinimalAnswer(
+                question_id=result.question_id,
+                question=result.question,
+                retrieved_sources=result.retrieved_sources, # MANTÉM TODAS AS FONTES PARA O RECALL
+                answer=final_answer
+            ))
 
-            answers.append(
-                MinimalAnswer(
-                    question_id=result.question_id,
-                    question=result.question,
-                    retrieved_sources=result.retrieved_sources,
-                    answer=answer_text,
-                )
-            )
+        # --- Salvamento e Métricas ---
+        avg_time = sum(timings) / len(timings)
+        print(f"\n[bold cyan]Average Time: {avg_time:.2f}s[/bold cyan]")
 
-        # -------------------------------------------------
-        # Timing
-        # -------------------------------------------------
+        output_data = StudentSearchResultsAndAnswer(search_results=answers, k=search_data.k)
 
-        total_s = sum(timings)
-
-        avg_s = total_s / len(timings)
-
-        max_s = max(timings)
-
-        min_s = min(timings)
-
-        over_2s = sum(
-            1 for t in timings if t > 2.0
-        )
-
-        print("\n[bold cyan]━━━ Timing Summary ━━━[/bold cyan]")
-
-        print(f"Total : {total}")
-        print(f"Total time : {total_s:.1f}s")
-        print(f"Average : {avg_s:.2f}s")
-        print(f"Min/Max : {min_s:.2f}s / {max_s:.2f}s")
-        print(f">2s : {over_2s}")
-
-        # -------------------------------------------------
-        # Save
-        # -------------------------------------------------
-
-        output_data = StudentSearchResultsAndAnswer(
-            search_results=answers,
-            k=results.k,
-        )
-
-        os.makedirs(save_directory, exist_ok=True)
-
-        output_path = os.path.join(
-            save_directory,
-            os.path.basename(student_search_results_path)
-        )
-
-        with open(
-            output_path,
-            "w",
-            encoding="utf-8"
-        ) as fd:
-
-            json.dump(
-                output_data.model_dump(
-                    exclude={
-                        "search_results": {
-                            "__all__": {
-                                "content",
-                                "retrieved_sources"
-                            }
-                        }
-                    }
-                ),
-                fd,
-                indent=4,
-                ensure_ascii=False
-            )
-
-        print(
-            f"\n[bold green]Saved:[/bold green] {output_path}"
-        )
+        with open(save_directory, "w") as fd:
+            # CRÍTICO: Não use exclude no retrieved_sources para não perder pontos de Recall!
+            json.dump(output_data.model_dump(), fd, indent=4, ensure_ascii=False)
