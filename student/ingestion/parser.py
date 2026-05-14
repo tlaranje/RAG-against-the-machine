@@ -6,8 +6,9 @@ class Parser:
         files = {}
         for root, _, filenames in os.walk(base_path):
             for filename in filenames:
-                if filename.endswith(('.py', '.md')):
+                if not filename.endswith(('.png', '.jpg', '.ico')):
                     file_path = os.path.join(root, filename)
+                    print(file_path)
                     files[file_path] = self.parse_file(file_path)
         return files
 

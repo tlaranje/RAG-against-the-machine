@@ -1,186 +1,277 @@
 from student.utils import bar
-from threading import Thread
 from llama_cpp import Llama
 from rich import print
 from typing import Any
 import json
 import re
 import os
+import time
 
 from student.models import (
-    MinimalAnswer, MinimalSearchResults,
-    StudentSearchResults, StudentSearchResultsAndAnswer
+    MinimalAnswer,
+    MinimalSearchResults,
+    StudentSearchResults,
+    StudentSearchResultsAndAnswer
 )
+
+# ---------------------------------------------------------
+# Regex cleanup
+# ---------------------------------------------------------
+
+_NOISE_PREFIX = re.compile(
+    r"^(Answer:|The answer is[:\s]+|Okay[,\s]+|Let me[^.]*\.\s*)",
+    re.IGNORECASE,
+)
+
+_NOISE_SUFFIX = re.compile(
+    r"(\n+Answer:.*|\nQuestion:.*|\nContext:.*)$",
+    re.DOTALL | re.IGNORECASE,
+)
+
+_MULTIPLE_CHOICE = re.compile(r"^[A-D][.)]\s+")
 
 
 def clean_answer(text: str) -> str:
-    # Remove blocos de código e artefactos comuns
-    text = re.sub(r"```.*?```", "", text, flags=re.DOTALL)
-    text = text.replace("\\boxed{", "").replace("}", "")
-    text = text.replace('"""', "").replace("```", "").strip()
+    text = text.strip()
 
-    # Remove prefill se repetido
-    if text.startswith("Answer:"):
-        text = text[len("Answer:"):].strip()
+    text = _NOISE_SUFFIX.sub("", text)
 
-    # Corta tudo após um segundo "Answer:" ou "Question:"
-    for noise in ["Answer:", "Question:", "Context:", "\nAnswer", "####"]:
-        if noise in text:
-            text = text[:text.index(noise)].strip()
+    for _ in range(2):
+        new = _NOISE_PREFIX.sub("", text).strip()
+        if new == text:
+            break
+        text = new
 
-    # Remove multiple-choice artefactos
-    if text.startswith(("A.", "B.", "C.", "D.")):
-        text = text[2:].strip()
+    text = _MULTIPLE_CHOICE.sub("", text).strip()
 
-    # Remove frase final se termina em ":"  — estava incompleta
-    sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', text)]
-    sentences = [s for s in sentences if s and not s.endswith(":")]
-    text = " ".join(sentences)
-
-    # Muito curto = inútil
-    if len(text) < 8:
-        return "No information found in the provided context."
+    text = re.sub(r"\s+", " ", text)
 
     return text.strip()
 
 
+# ---------------------------------------------------------
+# Few-shot
+# ---------------------------------------------------------
+
+_FEW_SHOT = """Context: The /v1/load_lora_adapter POST endpoint is used to dynamically load LoRA adapters.
+Question: What HTTP endpoint loads a LoRA adapter in vLLM?
+Answer: The POST /v1/load_lora_adapter endpoint.
+
+Context: vLLM exposes production metrics via a Prometheus endpoint at /metrics.
+Question: What endpoint does vLLM use to expose production metrics?
+Answer: The /metrics endpoint.
+
+"""
+
+
+# ---------------------------------------------------------
+# Small LLM
+# ---------------------------------------------------------
+
 class SmallLLM:
-    def __init__(
-        self, model_path: str = "models/qwen3-0.6b-q4_k_m.gguf"
-    ) -> None:
+    def __init__(self) -> None:
+
+        hf_home = os.getenv("HF_HOME", "./.llm")
+
+        model_path = os.path.join(
+            hf_home,
+            "hub",
+            "Qwen3-0.6B-Q8_0.gguf"
+        )
+
         if not os.path.exists(model_path):
-            print(
-                "[bold red]Arquivo GGUF não "
-                "encontrado em: {model_path}[/bold red]"
-            )
             raise FileNotFoundError(model_path)
 
-        # `n_ctx` sets the maximum context window (tokens).
-        # `n_threads` maps to the number of CPU threads used for matrix
-        # `n_batch` controls how many tokens are processed in one forward pass
-        # `cache_prompt` reuses the KV-cache for the system prompt across
-        # multiple calls, avoiding redundant computation.
-
-        physical_cores = os.cpu_count()
-        assert physical_cores is not None
-        use_threads = max(1, physical_cores - 1)
+        threads = max(1, (os.cpu_count() or 4) // 2)
 
         self.model = Llama(
             model_path=model_path,
             n_ctx=1024,
-            n_threads=use_threads,
-            n_threads_batch=use_threads,
-            n_batch=128,
+            n_threads=threads,
+            n_threads_batch=threads,
+            n_batch=256,
+            use_mlock=True,
             verbose=False,
             cache_prompt=True,
         )
-        print("[bold green]Modelo GGUF carregado via CPU[/bold green]")
 
-    def generate(self, prompt: str, i: int = 1) -> str:
-        outputs: Any = None
+        print("[bold green]GGUF loaded[/bold green]")
 
-        def run_model() -> None:
-            nonlocal outputs
-            outputs = self.model.create_completion(
-                prompt=prompt,
-                max_tokens=80,
-                temperature=0,
-                repeat_penalty=1.3,
-                stop=["Question:", "Context:", "\n\n"],
-            )
+    def generate(self, prompt: str) -> str:
 
-        thread = Thread(target=run_model)
-        thread.start()
+        outputs: Any = self.model.create_completion(
+            prompt=prompt,
 
-        with bar(
-            prompt, desc=f"Answering question {i}",
-            color="red", total=100, position=1
-        ) as pbar:
-            while thread.is_alive():
-                thread.join(timeout=0.012)
-                pbar.update(1)
+            max_tokens=24,
+            temperature=0.0,
 
-        content = outputs["choices"][0]["text"].strip()
+            top_k=1,
+            top_p=0.95,
 
-        noise_patterns = ["Okay,", "Let me", "Answer:", "The answer is", "```"]
-        for pattern in noise_patterns:
-            if content.startswith(pattern):
-                content = content.replace(pattern, "", 1).strip()
+            repeat_penalty=1.15,
 
-        if "A)" in content or "1." in content:
-            content = content.split("\n")[0]
+            stop=[
+                "\n",
+                "Question:",
+                "Context:",
+            ],
+        )
 
-        return content if len(content) > 2 else "No information found."
+        return outputs["choices"][0]["text"].strip()
 
+
+# ---------------------------------------------------------
+# Generator
+# ---------------------------------------------------------
 
 class Generator:
-    def __init__(
-        self, model_path: str = "models/qwen3-0.6b-q4_k_m.gguf"
+    def __init__(self) -> None:
+        self.llm = SmallLLM()
+
+    # -----------------------------------------------------
+    # Prompt Builder
+    # -----------------------------------------------------
+
+    def build_prompt(
+        self,
+        result: MinimalSearchResults
+    ) -> str:
+
+        question = re.sub(
+            r"_{2,}",
+            "what",
+            result.question
+        )
+
+        # IMPORTANT:
+        # Smaller context = MUCH faster
+        clean_ctx = ""
+
+        if result.content and len(result.content.strip()) > 20:
+
+            clean_ctx = " ".join(
+                result.content[:700].split()
+            )
+
+        if clean_ctx:
+            body = (
+                f"Context: {clean_ctx}\n"
+                f"Question: {question}\n"
+            )
+        else:
+            body = f"Question: {question}\n"
+
+        return f"{_FEW_SHOT}{body}Answer:"
+
+    # -----------------------------------------------------
+    # Single Answer
+    # -----------------------------------------------------
+
+    def answer(
+        self,
+        question: str,
+        context: list[str] | str
     ) -> None:
-        self.llm = SmallLLM(model_path)
 
-    def build_prompt(self, result: MinimalSearchResults) -> str:
-        context = result.content[:500] if result.content else "No information."
-
-        # Dois exemplos concretos ensinam o padrão ao modelo
-        few_shot = (
-            "Context: The Eiffel Tower is located in Paris, France. "
-            "It was built in 1889.\n"
-            "Question: Where is the Eiffel Tower located?\n"
-            "Answer: The Eiffel Tower is located in Paris, France.\n\n"
-
-            "Context: vLLM uses PagedAttention to manage memory efficiently. "
-            "It supports NVIDIA and AMD GPUs.\n"
-            "Question: What memory management technique does vLLM use?\n"
-            "Answer: vLLM uses PagedAttention to manage memory efficiently.\n\n"
-        )
-
-        return (
-            f"{few_shot}"
-            f"Context: {context}\n"
-            f"Question: {result.question}\n"
-            f"Answer:"
-        )
-
-    def answer(self, question: str, context: list[str] | str) -> None:
         if isinstance(context, list):
             context = "\n".join(context)
 
-        res_mock = MinimalSearchResults(
-            question_id="single", question=question,
-            retrieved_sources=[], content=context
+        mock = MinimalSearchResults(
+            question_id="single",
+            question=question,
+            retrieved_sources=[],
+            content=context,
         )
-        answer_text = clean_answer(
-            self.llm.generate(self.build_prompt(res_mock))
-        )
-        output = {
-            "question": question, "answer": answer_text, "context": context
-        }
-        os.makedirs("data/output", exist_ok=True)
-        with open("data/output/single_answer.json", "w") as fd:
-            json.dump(output, fd, indent=4, ensure_ascii=False)
 
-        print("[bold green]Resposta única salva.[/bold green]")
+        t0 = time.perf_counter()
+
+        raw = self.llm.generate(
+            self.build_prompt(mock)
+        )
+
+        elapsed = time.perf_counter() - t0
+
+        answer_text = clean_answer(raw)
+
+        output = {
+            "question": question,
+            "answer": answer_text
+        }
+
+        os.makedirs("data/output", exist_ok=True)
+
+        with open(
+            "data/output/single_answer.json",
+            "w",
+            encoding="utf-8"
+        ) as fd:
+
+            json.dump(
+                output,
+                fd,
+                indent=4,
+                ensure_ascii=False
+            )
+
+        print(
+            f"[green]Saved[/green] "
+            f"({elapsed:.2f}s)"
+        )
+
+    # -----------------------------------------------------
+    # Dataset Answering
+    # -----------------------------------------------------
 
     def answer_dataset(
-        self, student_search_results_path: str, save_directory: str,
+        self,
+        student_search_results_path: str,
+        save_directory: str,
     ) -> None:
-        with open(student_search_results_path, "r", encoding="utf-8") as fd:
+
+        with open(
+            student_search_results_path,
+            "r",
+            encoding="utf-8"
+        ) as fd:
+
             raw = json.load(fd)
 
         results = StudentSearchResults.model_validate(raw)
+
         total = len(results.search_results)
 
-        os.system("clear")
-        print(f"[bold green]Processando {total} questões ...[/bold green]")
+        print(
+            f"[bold green]Processing {total} questions[/bold green]"
+        )
 
         answers: list[MinimalAnswer] = []
-        for i, result in enumerate(bar(
-            results.search_results, desc="Generating answers",
-            color="green", position=0
-        ), start=1):
-            messages = self.build_prompt(result)
-            answer_text = self.llm.generate(messages, i)
+
+        timings: list[float] = []
+
+        pbar = bar(
+            results.search_results,
+            color="green",
+            position=0
+        )
+
+        for i, result in enumerate(pbar, start=1):
+
+            t0 = time.perf_counter()
+
+            prompt = self.build_prompt(result)
+
+            raw_text = self.llm.generate(prompt)
+
+            answer_text = clean_answer(raw_text)
+
+            elapsed = time.perf_counter() - t0
+
+            timings.append(elapsed)
+
+            pbar.set_description(
+                f"[{i}/{total}] {elapsed:.2f}s"
+            )
+
             answers.append(
                 MinimalAnswer(
                     question_id=result.question_id,
@@ -190,24 +281,68 @@ class Generator:
                 )
             )
 
-        output_data = StudentSearchResultsAndAnswer(
-            search_results=answers, k=results.k,
+        # -------------------------------------------------
+        # Timing
+        # -------------------------------------------------
+
+        total_s = sum(timings)
+
+        avg_s = total_s / len(timings)
+
+        max_s = max(timings)
+
+        min_s = min(timings)
+
+        over_2s = sum(
+            1 for t in timings if t > 2.0
         )
+
+        print("\n[bold cyan]━━━ Timing Summary ━━━[/bold cyan]")
+
+        print(f"Total : {total}")
+        print(f"Total time : {total_s:.1f}s")
+        print(f"Average : {avg_s:.2f}s")
+        print(f"Min/Max : {min_s:.2f}s / {max_s:.2f}s")
+        print(f">2s : {over_2s}")
+
+        # -------------------------------------------------
+        # Save
+        # -------------------------------------------------
+
+        output_data = StudentSearchResultsAndAnswer(
+            search_results=answers,
+            k=results.k,
+        )
+
         os.makedirs(save_directory, exist_ok=True)
 
-        file_name = os.path.basename(student_search_results_path)
-        output_path = os.path.join(save_directory, file_name)
+        output_path = os.path.join(
+            save_directory,
+            os.path.basename(student_search_results_path)
+        )
 
-        with open(output_path, "w", encoding="utf-8") as fd:
+        with open(
+            output_path,
+            "w",
+            encoding="utf-8"
+        ) as fd:
+
             json.dump(
                 output_data.model_dump(
-                    exclude={"search_results": {"__all__": {"content", "retrieved_sources"}}}
+                    exclude={
+                        "search_results": {
+                            "__all__": {
+                                "content",
+                                "retrieved_sources"
+                            }
+                        }
+                    }
                 ),
                 fd,
                 indent=4,
-                ensure_ascii=False,
+                ensure_ascii=False
             )
 
         print(
-            f"\n[bold green]Sucesso! Resultados em: {output_path}[/bold green]"
+            f"\n[bold green]Saved:[/bold green] {output_path}"
         )
