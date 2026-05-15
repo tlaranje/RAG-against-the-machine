@@ -27,7 +27,10 @@ class Retriever:
             List of chunk dicts with 'source' and 'content' keys.
         """
         results, _ = self.indexer.bm25.retrieve(
-            bm25s.tokenize(prompt), k=min(k, len(self.indexer.metadata))
+            bm25s.tokenize(
+                prompt, stopwords="en", stemmer=self.indexer.stemmer.stemWords
+            ),
+            k=min(k, len(self.indexer.metadata))
         )
         return [self.indexer.metadata[i] for i in results[0]]
 

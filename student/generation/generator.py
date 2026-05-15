@@ -37,9 +37,9 @@ class SmallLLM:
 
         self.model = Llama(
             model_path=model_path,
-            n_ctx=40960,
+            n_ctx=2048,
             n_threads=os.cpu_count(),
-            n_batch=2048,
+            n_batch=512,
             use_mlock=True,
             verbose=False,
             cache_prompt=True,
@@ -59,10 +59,12 @@ class SmallLLM:
 class Generator:
     def __init__(self) -> None:
         self.llm = SmallLLM()
+        self.re_comments = re.compile(r'#[^\n]*')
+        self.re_docstrings = re.compile(r'"{3}.*?"{3}', re.DOTALL)
 
     def _compress_and_clean(self, text: str) -> str:
-        text = re.sub(r'#[^\n]*', '', text)
-        text = re.sub(r'"{3}.*?"{3}', '', text, flags=re.DOTALL)
+        text = self.re_comments.sub('', text)
+        text = self.re_docstrings.sub('', text)
         return " ".join(text.split())
 
     def build_prompt(self, question: str, context: str) -> str:
@@ -96,7 +98,13 @@ class Generator:
         for result in progress_bar:
             t0 = time.perf_counter()
 
-            clean_ctx = self._compress_and_clean(result.content)
+            if result.retrieved_sources:
+                top_1_source = result.retrieved_sources[0]
+                contexto = top_1_source.content if top_1_source.content else ""
+            else:
+                contexto = ""
+
+            clean_ctx = self._compress_and_clean(contexto)
 
             prompt = self.build_prompt(result.question, clean_ctx)
             raw_text = self.llm.generate(prompt)
@@ -123,17 +131,17 @@ class Generator:
         print(f"[bold green]Total time: {sum(timings):.2f}s[/bold green]")
         print(f"[bold green]Answers save on: {save_directory}[/bold green]")
 
-        # avg_time = sum(timings) / len(timings)
-        # max_time = max(timings)
-        # print("\n" + "─" * 50)
-        # print("[bold cyan]Métricas de Performance (GPU):[/bold cyan]")
-        # print(f"Média de Tempo: [yellow]{avg_time:.2f}s[/yellow]")
-        # print(f"Tempo Máximo:  [yellow]{max_time:.2f}s[/yellow]")
-        # print(
-        #     f"Acima de 2.0s: [red]{slow_responses}[/red] de {len(timings)} "
-        #     f"({(slow_responses/len(timings))*100:.1f}%)"
-        # )
-        # print("─" * 50)
+        avg_time = sum(timings) / len(timings)
+        max_time = max(timings)
+        print("\n" + "─" * 50)
+        print("[bold cyan]Métricas de Performance (GPU):[/bold cyan]")
+        print(f"Média de Tempo: [yellow]{avg_time:.2f}s[/yellow]")
+        print(f"Tempo Máximo:  [yellow]{max_time:.2f}s[/yellow]")
+        print(
+            f"Acima de 2.0s: [red]{slow_responses}[/red] de {len(timings)} "
+            f"({(slow_responses/len(timings))*100:.1f}%)"
+        )
+        print("─" * 50)
 
         output_data = StudentSearchResultsAndAnswer(
             search_results=answers, k=search_data.k

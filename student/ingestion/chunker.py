@@ -17,19 +17,26 @@ class Chunker:
                 chunk_size=self.max_chunk_size,
                 chunk_overlap=self.max_chunk_size // 10
             )
+        elif f_type in ('md', 'rst'):
+            splitter = RecursiveCharacterTextSplitter.from_language(
+                language=Language.MARKDOWN,
+                chunk_size=self.max_chunk_size,
+                chunk_overlap=int(self.max_chunk_size * 0.2)
+            )
         else:
             splitter = RecursiveCharacterTextSplitter(
                 chunk_size=self.max_chunk_size,
-                chunk_overlap=int(self.max_chunk_size * 0.1),
+                chunk_overlap=int(self.max_chunk_size * 0.2),
                 separators=["\n\n", "\n", ". ", "! ", "? ", " ", ""]
             )
 
         res, pos = {}, 0
         for i, chunk in enumerate(splitter.split_text(content)):
-            start = content.find(chunk, pos)
+            start = content.find(chunk)
             if start == -1:
-                continue
-
+                start = content.find(chunk)
+            if start == -1:
+                start = pos
             end = start + len(chunk)
             pos = end
             chunk_id = f"{path}:{start}:{end}:{i}"
@@ -39,7 +46,8 @@ class Chunker:
                 "source": MinimalSource(
                     file_path=path,
                     first_character_index=start,
-                    last_character_index=end
+                    last_character_index=end,
+                    content=chunk
                 )
             }
         return res

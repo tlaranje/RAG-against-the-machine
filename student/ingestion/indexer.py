@@ -1,10 +1,10 @@
 import json
 import os
 from typing import TYPE_CHECKING, List, Dict, Any
-
 import bm25s
 from student.ingestion import Chunker
 from student.utils import bar
+from Stemmer import Stemmer
 
 if TYPE_CHECKING:
     from student.ingestion import Parser
@@ -21,6 +21,7 @@ class Indexer:
         self.bm25 = bm25s.BM25()
         self.metadata: List[Dict[str, Any]] = []
         self.chunk_texts: List[str] = []
+        self.stemmer = Stemmer("english")
 
     def index(self, max_chunk_size: int) -> None:
         files = self.parser.parse_directory("data/raw/vllm-0.10.1")
@@ -37,7 +38,9 @@ class Indexer:
         self.chunk_texts = texts
 
         with bar(desc="Tokenizing", color="blue") as pbar:
-            tokens = bm25s.tokenize(texts)
+            tokens = bm25s.tokenize(
+                texts, stopwords="en", stemmer=self.stemmer.stemWords
+            )
             pbar.update(1)
 
         with bar(desc="Building Index", color="yellow") as pbar:
@@ -45,10 +48,9 @@ class Indexer:
             pbar.update(1)
 
         self.metadata = []
-        for meta, text in zip(sources, self.chunk_texts):
+        for meta in sources:
             self.metadata.append({
-                "source": meta.model_dump(),
-                "content": text
+                "source": meta.model_dump()
             })
 
         os.makedirs(os.path.dirname(self.metadata_path), exist_ok=True)
