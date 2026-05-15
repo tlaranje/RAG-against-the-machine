@@ -14,8 +14,10 @@ RM					:= rm -rf
 FIND				:= find
 
 MODEL_DIR  := $(HF_HOME)/hub
-MODEL_URL  := https://huggingface.co/enacimie/Qwen3-0.6B-Q4_K_M-GGUF/resolve/main/qwen3-0.6b-q4_k_m.gguf
-MODEL_NAME := qwen3-0.6b-q4_k_m.gguf
+MODEL_URL  := https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-BF16.gguf
+MODEL_NAME := Qwen
+# MODEL_URL  := https://huggingface.co/enacimie/Qwen3-0.6B-Q4_K_M-GGUF/resolve/main/qwen3-0.6b-q4_k_m.gguf
+# MODEL_NAME := qwen3-0.6b-q4_k_m.gguf
 
 # === DIRENV SETUP ===
 DIRENV_BIN := $(HOME)/.local/bin/direnv
@@ -31,8 +33,6 @@ endef
 
 CLEAR := $(SETUP_DIRENV) && clear
 
-export CMAKE_ARGS="-DLLAMA_CUDA=on"
-
 # === BUILD TARGETS ===
 install:
 	@$(CLEAR)
@@ -43,10 +43,6 @@ install:
 		curl -L $(MODEL_URL) -o $(MODEL_DIR)/$(MODEL_NAME); \
 	fi
 	@uv venv --python 3.12
-	@echo "Installing dependencies with GPU support..."
-	# Primeiro instalamos o llama-cpp com suporte CUDA
-	@uv pip install llama-cpp-python --no-cache-dir
-	# Depois o restante do projeto
 	@uv sync
 
 run:
