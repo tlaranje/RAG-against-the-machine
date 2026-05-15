@@ -21,7 +21,7 @@ dependencies = [
     "autopep8>=2.3.2",
     "accelerate>=1.1.0",
     "bitsandbytes>=0.46.1",
-    "llama-cpp-python>=0.1.9",
+    "llama-cpp-python>=0.2.0",
     "FlashRank>=0.1.1",
     "llmlingua>=0.2.2"
 ]
