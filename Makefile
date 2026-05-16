@@ -25,6 +25,7 @@ DIRENV_BIN := $(HOME)/.local/bin/direnv
 define SETUP_DIRENV
 if ! command -v direnv >/dev/null 2>&1; then \
 	echo "Installing direnv..."; \
+	mkdir $(MODEL_DIR)
 	curl -sfL https://direnv.net/install.sh | bash; \
 	export PATH="$(HOME)/.local/bin:$$PATH"; \
 fi; \
