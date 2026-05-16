@@ -5,27 +5,17 @@ import json
 from student.models import (
     MinimalSearchResults, RagDataset, StudentSearchResults, UnansweredQuestion
 )
+from rich import print
 
 if TYPE_CHECKING:
     from student.ingestion import Indexer
 
 
 class Retriever:
-    """Retriever using BM25 over the indexed knowledge base."""
-
     def __init__(self, indexer: "Indexer") -> None:
         self.indexer = indexer
 
     def search(self, prompt: str, k: int = 1) -> list[dict]:
-        """Return top-k chunks for a given query.
-
-        Args:
-            prompt: The search query.
-            k: Number of results to return.
-
-        Returns:
-            List of chunk dicts with 'source' and 'content' keys.
-        """
         results, _ = self.indexer.bm25.retrieve(
             bm25s.tokenize(
                 prompt, stopwords="en", stemmer=self.indexer.stemmer.stemWords
@@ -35,18 +25,6 @@ class Retriever:
         return [self.indexer.metadata[i] for i in results[0]]
 
     def build_context(self, chunks: list[dict], max_chars: int = 1800) -> str:
-        """
-        Concatenate chunk contents up to max_chars to stay within token limits.
-
-        Putting the most relevant chunk first so the LLM sees it early.
-
-        Args:
-            chunks: List of retrieved chunks ordered by relevance.
-            max_chars: Maximum total characters for the context string.
-
-        Returns:
-            A single context string ready to be passed to the LLM.
-        """
         parts = []
         total = 0
         for chunk in chunks:
@@ -67,14 +45,6 @@ class Retriever:
         self, data_path: str, k: int,
         save_dir: str, max_context_chars: int = 1800,
     ) -> None:
-        """Run retrieval over a full question dataset and save results.
-
-        Args:
-            data_path: Path to the JSON dataset file.
-            k: Number of sources to retrieve per question.
-            save_dir: Path where the output JSON will be written.
-            max_context_chars: Max characters of context passed to generator.
-        """
         # 1. Load Index
         with bar(desc="Loading index", color="yellow") as pbar:
             self.indexer.load()
@@ -106,7 +76,12 @@ class Retriever:
         ) as pbar:
             for q in questions:
                 chunks = self.search(q.question, k=k)
-
+                print(f"\n[bold green]{q.question}[/bold green]")
+                for c in chunks:
+                    print(
+                        f"[bold yellow]{c["source"]["file_path"]}"
+                        "[/bold yellow]"
+                    )
                 if chunks:
                     # All k sources for recall@k evaluation
                     retrieved_sources = [
@@ -131,6 +106,9 @@ class Retriever:
         # 5. Save
         with bar(desc="Saving", color="cyan") as pbar:
             s_res = StudentSearchResults(search_results=results, k=k)
+            data = s_res.model_dump()
+            for result in data["search_results"]:
+                result["question_str"] = result.pop("question")
             with open(save_dir, "w") as fd:
-                json.dump(s_res.model_dump(), fd, indent=4, ensure_ascii=False)
+                json.dump(data, fd, indent=4, ensure_ascii=False)
             pbar.update(1)
