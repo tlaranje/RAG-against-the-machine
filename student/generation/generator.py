@@ -163,37 +163,6 @@ def _make_llama_instance(
         )
 
 
-class Reranker:
-    _STOPWORDS = frozenset({
-        "the", "a", "an", "is", "in", "of", "to", "and",
-        "for", "how", "what", "does", "do", "can", "you",
-        "it", "with", "on", "are", "be", "by", "or", "at",
-    })
-
-    def _keyword_score(self, question: str, content: str) -> float:
-        q_words = {
-            w.lower() for w in re.findall(r'\w+', question)
-            if w.lower() not in self._STOPWORDS and len(w) > 2
-        }
-        c_words = {
-            w.lower() for w in re.findall(r'\w+', content)
-            if w.lower() not in self._STOPWORDS and len(w) > 2
-        }
-        if not q_words:
-            return 0.0
-        return len(q_words & c_words) / len(q_words)
-
-    def best_chunk(self, question: str, chunks: List[str]) -> str:
-        if not chunks:
-            return ""
-        best = max(chunks, key=lambda c: self._keyword_score(question, c))
-        truncated = best[:_MAX_CHUNK_CHARS]
-        last_period = truncated.rfind(". ")
-        if last_period > _MAX_CHUNK_CHARS // 2:
-            truncated = truncated[:last_period + 1]
-        return truncated
-
-
 class SmallLLM:
     def __init__(self, n_workers: int = _BATCH_SIZE) -> None:
         hf_home = os.getenv("HF_HOME", "./.llm")
@@ -255,7 +224,6 @@ class SmallLLM:
 
 class Generator:
     def __init__(self) -> None:
-        self.reranker = Reranker()
         self.llm = SmallLLM(n_workers=_BATCH_SIZE)
         self.llm.warmup(FEW_SHOT)
 
@@ -270,26 +238,21 @@ class Generator:
         print(f"[bold cyan]Question:[/bold cyan] {question}")
         print(f"[bold green]Answer:[/bold green] {result}")
 
-    def _get_context(self, question: str, sources: list) -> str:
-        chunks = [
-            src.content.strip()
-            for src in sources
-            if src.content
-            and src.content.strip()
-            and len(src.content.strip()) > 50
-            and not src.content.strip().startswith("# --8<--")
-        ]
-        return self.reranker.best_chunk(question, chunks)
-
     def build_prompt(self, question: str, context: str) -> str:
         return FEW_SHOT + f"Context: {context}\nQuestion: {question}\nAnswer:"
 
     def _prepare_batch(self, results_batch: list) -> List[str]:
         prompts = []
         for result in results_batch:
-            ctx = self._get_context(
-                result.question, result.retrieved_sources or []
-            )
+            chunks = [
+                src.content.strip()
+                for src in result.retrieved_sources
+                if src.content
+                and src.content.strip()
+                and len(src.content.strip()) > 50
+                and not src.content.strip().startswith("# --8<--")
+            ]
+            ctx = chunks[0]
             prompts.append(
                 self.build_prompt(result.question, ctx) if ctx else ""
             )
@@ -357,20 +320,8 @@ class Generator:
                 f"({batch_elapsed/len(batch):.2f}s/q)"
             )
 
-        avg_time = sum(timings) / len(timings)
-        max_time = max(timings)
-
         print(f"[bold green]Total time: {sum(timings):.2f}s[/bold green]")
         print(f"[bold green]Answers saved to: {save_directory}[/bold green]")
-        print("\n" + "─" * 50)
-        print("[bold cyan]Performance Metrics:[/bold cyan]")
-        print(f"Average time: [yellow]{avg_time:.2f}s[/yellow]")
-        print(f"Max time:     [yellow]{max_time:.2f}s[/yellow]")
-        print(
-            f"Above 2.0s:   [red]{slow_responses}[/red] de {len(timings)} "
-            f"({(slow_responses / len(timings)) * 100:.1f}%)"
-        )
-        print("─" * 50)
 
         output_data = StudentSearchResultsAndAnswer(
             search_results=answers, k=search_data.k
@@ -383,7 +334,7 @@ class Generator:
                 output_data.model_dump(
                     exclude={
                         "search_results": {
-                            "__all__": {"content"}
+                            "__all__": {"content", "retrieved_sources"}
                         }
                     }
                 ),
