@@ -13,21 +13,19 @@
 RM					:= rm -rf
 FIND				:= find
 
-MODEL_DIR  := $(HF_HOME)/hub
-MODEL_URL  := https://huggingface.co/unsloth/Qwen3-0.6B-GGUF/resolve/main/Qwen3-0.6B-BF16.gguf
+MODEL_DIR  := $(HF_HOME)/
+MODEL_URL  := https://huggingface.co/enacimie/Qwen3-0.6B-Q4_K_M-GGUF/resolve/main/qwen3-0.6b-q4_k_m.gguf
 MODEL_NAME := Qwen
-# MODEL_URL  := https://huggingface.co/enacimie/Qwen3-0.6B-Q4_K_M-GGUF/resolve/main/qwen3-0.6b-q4_k_m.gguf
-# MODEL_NAME := qwen3-0.6b-q4_k_m.gguf
 
 # === DIRENV SETUP ===
 DIRENV_BIN := $(HOME)/.local/bin/direnv
 
 define SETUP_DIRENV
 if ! command -v direnv >/dev/null 2>&1; then \
-	echo "Installing direnv..."; \
-	mkdir $(MODEL_DIR)
-	curl -sfL https://direnv.net/install.sh | bash; \
-	export PATH="$(HOME)/.local/bin:$$PATH"; \
+    echo "Installing direnv..."; \
+    mkdir -p $(MODEL_DIR); \
+    curl -sfL https://direnv.net/install.sh | bash; \
+    export PATH="$(HOME)/.local/bin:$$PATH"; \
 fi; \
 direnv allow >/dev/null 2>&1 || true
 endef

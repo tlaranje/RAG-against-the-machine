@@ -3,9 +3,9 @@ from student.utils import bar
 import bm25s
 import json
 from student.models import (
-    MinimalSearchResults, RagDataset, StudentSearchResults, UnansweredQuestion
+    MinimalSearchResults, RagDataset, StudentSearchResults, UnansweredQuestion,
+    MinimalSource
 )
-from rich import print
 
 if TYPE_CHECKING:
     from student.ingestion import Indexer
@@ -22,7 +22,14 @@ class Retriever:
             ),
             k=min(k, len(self.indexer.metadata))
         )
-        return [self.indexer.metadata[i] for i in results[0]]
+
+        ranked_chunks = []
+        for rank, idx in enumerate(results[0]):
+            chunk = self.indexer.metadata[idx].copy()
+            chunk["rank"] = rank
+            ranked_chunks.append(chunk)
+
+        return ranked_chunks
 
     def build_context(self, chunks: list[dict], max_chars: int = 1800) -> str:
         parts = []
@@ -32,7 +39,6 @@ class Retriever:
             if not content:
                 continue
             if total + len(content) > max_chars:
-                # Fit whatever still fits
                 remaining = max_chars - total
                 if remaining > 100:
                     parts.append(content[:remaining])
@@ -76,18 +82,17 @@ class Retriever:
         ) as pbar:
             for q in questions:
                 chunks = self.search(q.question, k=k)
-                print(f"\n[bold green]{q.question}[/bold green]")
-                for c in chunks:
-                    print(
-                        f"[bold yellow]{c["source"]["file_path"]}"
-                        "[/bold yellow]"
-                    )
                 if chunks:
-                    # All k sources for recall@k evaluation
                     retrieved_sources = [
-                        chunk["source"] for chunk in chunks
+                        MinimalSource(
+                            file_path=chunk["source"]["file_path"],
+                            first_character_index=chunk["source"]["first_character_index"],
+                            last_character_index=chunk["source"]["last_character_index"],
+                            content=chunk["source"]["content"],
+                            rank=chunk["rank"],
+                        )
+                        for chunk in chunks
                     ]
-                    # Merged context for the generator
                     content = self.build_context(
                         chunks, max_chars=max_context_chars
                     )

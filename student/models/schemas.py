@@ -8,6 +8,7 @@ class MinimalSource(BaseModel):
     first_character_index: int
     last_character_index: int
     content: Optional[str] = None
+    rank: Optional[int] = 0
 
 
 class UnansweredQuestion(BaseModel):
@@ -41,4 +42,4 @@ class StudentSearchResults(BaseModel):
 
 
 class StudentSearchResultsAndAnswer(StudentSearchResults):
-    search_results: List[MinimalAnswer]  # type: ignore[assignment]
+    search_results: List[MinimalAnswer]
