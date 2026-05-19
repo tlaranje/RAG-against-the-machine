@@ -209,7 +209,9 @@ def _quick_sort_similarity(all_results: list) -> list:
         return []
     # Sort by (lexicographic, character length) for a cache-friendly
     # ordering without the overhead of a true similarity computation.
-    return sorted(all_results, key=lambda x: (len(x.question), x.question))
+    return sorted(
+        all_results, key=lambda x: (len(x.question_str), x.question_str)
+    )
 
 
 class SmallLLM:
@@ -426,7 +428,7 @@ class Generator:
                 continue
 
             combined = " ".join(chunks)
-            prompts.append(self.build_prompt(result.question, combined))
+            prompts.append(self.build_prompt(result.question_str, combined))
 
         return prompts
 
@@ -452,11 +454,6 @@ class Generator:
         # 1. Load and validate the input data
         with open(student_search_results_path, "r") as fd:
             data = json.load(fd)
-
-        # Normalise legacy field name used by older retrieval outputs.
-        for item in data.get("search_results", []):
-            if "question_str" in item and "question" not in item:
-                item["question"] = item.pop("question_str")
 
         search_data = StudentSearchResults.model_validate(data)
         all_results = search_data.search_results
@@ -497,7 +494,7 @@ class Generator:
                 raw, timed_out, elapsed = raw_answers[i]
 
                 final_answer = (
-                    clean_answer(raw, result.question)
+                    clean_answer(raw, result.question_str)
                     if raw else "Not found in context."
                 )
                 if not final_answer:
@@ -507,7 +504,7 @@ class Generator:
 
                 if timed_out:
                     slow_answers.append({
-                        "question": result.question,
+                        "question": result.question_str,
                         "answer": final_answer,
                         "time": elapsed,
                     })
@@ -515,7 +512,7 @@ class Generator:
                 answers.append(
                     MinimalAnswer(
                         question_id=result.question_id,
-                        question=result.question,
+                        question_str=result.question_str,
                         retrieved_sources=result.retrieved_sources,
                         answer=final_answer,
                     )
@@ -555,9 +552,13 @@ class Generator:
             json.dump(
                 output_data.model_dump(
                     exclude={
-                        "search_results": {"__all__": {
-                            "content"
-                        }}
+                        "search_results": {
+                            "__all__": {
+                                "retrieved_sources": {
+                                    "__all__": {"content"}
+                                }
+                            }
+                        }
                     }
                 ),
                 fd, indent=4, ensure_ascii=False,
