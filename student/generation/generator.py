@@ -15,6 +15,18 @@ from student.models import (
 # Maximum number of new tokens the model may produce per answer.
 _MAX_NEW_TOKENS = 200
 
+# Number of top-ranked chunks concatenated as context for each answer.
+_NUM_CHUNKS = 1
+
+# Maximum number of tokens in the model's context window (prompt + answer).
+_N_CTX = 2048
+
+# Maximum number of characters per text chunk produced by the Chunker.
+_CHUNK_SIZE = 180
+
+# Number of tokens evaluated in parallel during prompt processing.
+_N_BATCH = 512
+
 # Number of questions processed in a single forward-pass batch.
 _BATCH_SIZE = 8
 
@@ -220,7 +232,7 @@ class SmallLLM:
             raise FileNotFoundError(model_path)
 
         self._model = _make_llama_instance(
-            model_path, 2048, _N_THREADS, 512
+            model_path, _N_CTX, _N_THREADS, _N_BATCH
         )
 
     def _run_batch(self, prompts: list[str]) -> list[str]:
@@ -312,7 +324,7 @@ class Generator:
 
     def __init__(self) -> None:
         self.llm = SmallLLM()
-        self.chunker = Chunker(max_chunk_size=180)
+        self.chunker = Chunker(max_chunk_size=_CHUNK_SIZE)
 
     def build_prompt(self, question: str, context: str) -> str:
         """
@@ -357,7 +369,7 @@ class Generator:
 
         # Concatenate the first two chunks to stay within token budget
         # while maximising the amount of evidence provided.
-        combined_context = " ".join(chunks[:2])
+        combined_context = " ".join(chunks[:_NUM_CHUNKS])
         prompt = self.build_prompt(question, combined_context)
 
         raw, _, elapsed = self.llm.generate_batch([prompt])[0]
@@ -392,10 +404,10 @@ class Generator:
         prompts = []
         for result in results_batch:
             chunks: list[str] = []
-            sources = sorted(
-                result.retrieved_sources, key=lambda s: s.rank or 9999
-            )
-            for src in sources:
+            # sources = sorted(
+            #     result.retrieved_sources, key=lambda s: s.rank or 9999
+            # )
+            for src in result.retrieved_sources:
                 # Skip sources that are empty, too short to be
                 # informative, or mkdocs snippet-include directives.
                 if (
@@ -541,9 +553,7 @@ class Generator:
                         }}
                     }
                 ),
-                fd,
-                indent=4,
-                ensure_ascii=False,
+                fd, indent=4, ensure_ascii=False,
             )
 
         print(
