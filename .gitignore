@@ -1,6 +1,7 @@
 .mypy_cache/
 __pycache__/
 data/output
+data/processed
 .llm
 .uv_cache
 .venv
