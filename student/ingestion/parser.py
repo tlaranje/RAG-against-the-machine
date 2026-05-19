@@ -17,9 +17,12 @@ class Parser:
         for root, _, filenames in os.walk(base_path):
             for filename in filenames:
                 # Only process supported document extensions.
-                if filename.endswith(('.pdf', '.txt', '.md', '.py')):
+                if filename.endswith(('.txt', '.md', '.py')):
                     file_path = os.path.join(root, filename)
-                    files[file_path] = self.parse_file(file_path)
+                    try:
+                        files[file_path] = self.parse_file(file_path)
+                    except Exception as e:
+                        raise e
         return files
 
     def parse_file(self, file_path: str) -> str:
