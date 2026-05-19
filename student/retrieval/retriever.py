@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING
 from student.utils import bar
 import bm25s
 import json
+import os
 from student.models import (
     MinimalSearchResults, RagDataset, StudentSearchResults,
     UnansweredQuestion, MinimalSource
@@ -69,10 +70,7 @@ class Retriever:
             total += len(content)
         return "\n---\n".join(parts)
 
-    def search_dataset(
-        self, data_path: str, k: int,
-        save_dir: str, max_context_chars: int = 1800,
-    ) -> None:
+    def search_dataset(self, data_path: str, k: int, save_dir: str) -> None:
         """
         Run retrieval over a full dataset and save the results.
 
@@ -80,7 +78,6 @@ class Retriever:
             data_path: Path to the JSON file with the ``RagDataset``.
             k: Number of sources to retrieve per question.
             save_dir: Output path for the JSON results file.
-            max_context_chars: Character budget for the merged context.
         """
         # 1. Load Index
         with bar(desc="Loading index", color="yellow") as pbar:
@@ -127,6 +124,8 @@ class Retriever:
                         )
                         for chunk in chunks
                     ]
+                else:
+                    retrieved_sources = []
                 results.append(MinimalSearchResults(
                     question_id=q.question_id,
                     question=q.question,
@@ -135,11 +134,21 @@ class Retriever:
                 pbar.update(1)
 
         # 5. Save results to disk as JSON.
+        if save_dir.endswith("/") or os.path.isdir(save_dir):
+            os.makedirs(save_dir, exist_ok=True)
+            file_path = os.path.join(save_dir, "dataset.json")
+        else:
+            os.makedirs(os.path.dirname(save_dir), exist_ok=True)
+            file_path = save_dir
+
         with bar(desc="Saving", color="cyan") as pbar:
             s_res = StudentSearchResults(search_results=results, k=k)
             data = s_res.model_dump()
+
             for result in data["search_results"]:
                 result["question_str"] = result.pop("question")
-            with open(save_dir, "w") as fd:
+
+            with open(file_path, "w") as fd:
                 json.dump(data, fd, indent=4, ensure_ascii=False)
+
             pbar.update(1)

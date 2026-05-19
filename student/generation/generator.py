@@ -544,12 +544,19 @@ class Generator:
 
         os.makedirs(os.path.dirname(save_directory), exist_ok=True)
 
-        with open(save_directory, "w") as fd:
+        if save_directory.endswith("/") or os.path.isdir(save_directory):
+            os.makedirs(save_directory, exist_ok=True)
+            file_path = os.path.join(save_directory, "dataset.json")
+        else:
+            os.makedirs(os.path.dirname(save_directory), exist_ok=True)
+            file_path = save_directory
+
+        with open(file_path, "w") as fd:
             json.dump(
                 output_data.model_dump(
                     exclude={
                         "search_results": {"__all__": {
-                            "content", "retrieved_sources"
+                            "content"
                         }}
                     }
                 ),

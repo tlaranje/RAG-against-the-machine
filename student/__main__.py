@@ -39,7 +39,7 @@ class Main:
 
         # extrai só o texto de cada chunk
         context = "\n".join(
-            s["content"] for s in sources if s.get("content")
+           s["source"]["content"] for s in sources if s.get("content")
         )
 
         generator = Generator()
