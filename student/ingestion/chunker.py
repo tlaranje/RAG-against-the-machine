@@ -1,6 +1,7 @@
 from langchain_text_splitters import Language, RecursiveCharacterTextSplitter
 from student.models import MinimalSource
 import re
+import os
 
 _DISCARD_LINE_PATTERNS = [
     # code fence delimiters  ```python / ``` alone
@@ -161,7 +162,8 @@ class Chunker:
             See :meth:`split` for the exact structure.
         """
         path, content = next(iter(file.items()))
-        return self.split(content, path.split(".")[-1].lower(), path)
+        f_type = os.path.splitext(path)[1].lower().lstrip(".")
+        return self.split(content, f_type, path)
 
     def chunk_text(self, text: str) -> list[str]:
         """

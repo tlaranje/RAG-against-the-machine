@@ -13,7 +13,7 @@ from student.models import (
 )
 
 # Maximum number of new tokens the model may produce per answer.
-_MAX_NEW_TOKENS = 200
+_MAX_NEW_TOKENS = 150
 
 # Number of top-ranked chunks concatenated as context for each answer.
 _NUM_CHUNKS = 1
