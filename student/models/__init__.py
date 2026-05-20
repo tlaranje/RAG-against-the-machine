@@ -3,4 +3,10 @@ from .schemas import (
     MinimalAnswer, MinimalSearchResults, MinimalSource, UnansweredQuestion,
     AnsweredQuestion, RagDataset, StudentSearchResults,
     StudentSearchResultsAndAnswer
-    )
+)
+
+__all__ = (
+    "MinimalAnswer", "MinimalSearchResults", "MinimalSource",
+    "UnansweredQuestion", "AnsweredQuestion", "RagDataset",
+    "StudentSearchResults", "StudentSearchResultsAndAnswer"
+)

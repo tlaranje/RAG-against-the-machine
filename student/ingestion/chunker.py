@@ -1,5 +1,6 @@
 from langchain_text_splitters import Language, RecursiveCharacterTextSplitter
 from student.models import MinimalSource
+from typing import Any
 import re
 import os
 
@@ -109,7 +110,9 @@ def clean_source_content(content: str) -> str:
     return text.strip()
 
 
-def clean_search_results(search_results: list[dict]) -> list[dict]:
+def clean_search_results(
+    search_results: list[dict[str, Any]]
+) -> list[dict[str, Any]]:
     """
     Apply ``clean_source_content`` to every source in a results list.
 
@@ -147,7 +150,7 @@ class Chunker:
     def __init__(self, max_chunk_size: int) -> None:
         self.max_chunk_size = max_chunk_size
 
-    def chunk_file(self, file: dict[str, str]) -> dict[str, dict]:
+    def chunk_file(self, file: dict[str, str]) -> dict[str, dict[str, Any]]:
         """
         Chunk a single file given as a path-to-content mapping.
 
@@ -190,7 +193,9 @@ class Chunker:
         )
         return [c.strip() for c in splitter.split_text(text) if c.strip()]
 
-    def split(self, content: str, f_type: str, path: str) -> dict[str, dict]:
+    def split(
+        self, content: str, f_type: str, path: str
+    ) -> dict[str, dict[str, Any]]:
         """
         Split file content into cleaned, position-annotated chunks.
 
@@ -242,7 +247,7 @@ class Chunker:
                 separators=["\n\n", "\n", ". ", "! ", "? ", " ", ""],
             )
 
-        res: dict[str, dict] = {}
+        res: dict[str, dict[str, Any]] = {}
         # Track search position to handle duplicate substrings correctly
         pos = 0
 

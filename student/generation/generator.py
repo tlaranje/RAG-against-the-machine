@@ -10,19 +10,20 @@ import os
 import re
 from student.models import (
     MinimalAnswer, StudentSearchResults, StudentSearchResultsAndAnswer,
+    MinimalSearchResults
 )
 
 # Maximum number of new tokens the model may produce per answer.
 _MAX_NEW_TOKENS = 150
 
 # Number of top-ranked chunks concatenated as context for each answer.
-_NUM_CHUNKS = 1
+_NUM_CHUNKS = 2
 
 # Maximum number of tokens in the model's context window (prompt + answer).
 _N_CTX = 2048
 
 # Maximum number of characters per text chunk produced by the Chunker.
-_CHUNK_SIZE = 180
+_CHUNK_SIZE = 160
 
 # Number of tokens evaluated in parallel during prompt processing.
 _N_BATCH = 512
@@ -127,7 +128,7 @@ def clean_answer(text: str, question: str = "") -> str:
     return " ".join(text.split()).strip()
 
 
-def _print_slow_answers(slow_answers: list[dict]) -> None:
+def _print_slow_answers(slow_answers: list[dict[str, Any]]) -> None:
     """
     Print a sorted report of answers that exceeded the timeout.
 
@@ -189,7 +190,9 @@ def _make_llama_instance(
         )
 
 
-def _quick_sort_similarity(all_results: list) -> list:
+def _quick_sort_similarity(
+    all_results: list[MinimalSearchResults]
+) -> list[Any]:
     """
     Sort search results to group similar-length questions together.
     Placing questions of similar token length consecutively reduces
@@ -386,7 +389,9 @@ class Generator:
         print(f"[bold green]Answer:[/bold green] {result}")
         print(f"[bold yellow]Time:[/bold yellow] {elapsed:.2f}s")
 
-    def _prepare_batch(self, results_batch: list) -> list[str]:
+    def _prepare_batch(
+        self, results_batch: list[MinimalSearchResults]
+    ) -> list[str]:
         """
         Build a list of prompts from a batch of retrieval results.
 
@@ -465,7 +470,7 @@ class Generator:
         # 2. Initialise accumulators
         answers: list[MinimalAnswer] = []
         timings: list[float] = []
-        slow_answers: list[dict] = []
+        slow_answers: list[dict[str, Any]] = []
 
         print(
             f"[bold green]Processing "
@@ -536,7 +541,7 @@ class Generator:
 
         output_data = StudentSearchResultsAndAnswer(
             search_results=answers,
-            k=search_data.k,
+            k=search_data.k
         )
 
         os.makedirs(os.path.dirname(save_directory), exist_ok=True)

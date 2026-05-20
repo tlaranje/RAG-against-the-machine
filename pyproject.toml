@@ -38,5 +38,6 @@ dev = [
 ignore_missing_imports = true
 exclude = [
     '^data/',
-    'data'
+    'data',
+    '.venv'
 ]
