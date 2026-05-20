@@ -33,11 +33,3 @@ dev = [
     "types-setuptools>=82.0.0.20260408",
     "types-docopt>=0.6.11",
 ]
-
-[tool.mypy]
-ignore_missing_imports = true
-exclude = [
-    '^data/',
-    'data',
-    '.venv'
-]

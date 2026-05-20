@@ -74,15 +74,15 @@ fclean: clean
 	fi
 
 lint:
-	@clear && uv run flake8 .
-	@uv run mypy . --warn-return-any \
+	@clear && uv run flake8 student
+	@uv run mypy student --warn-return-any \
 	    --warn-unused-ignores \
 	    --ignore-missing-imports \
 	    --disallow-untyped-defs \
 	    --check-untyped-defs
 
 lint-strict:
-	@clear && uv run flake8 .
-	@uv run mypy . --strict
+	@clear && uv run flake8 student
+	@uv run mypy student --strict
 
 .PHONY: install run debug clean lint lint-strict

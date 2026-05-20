@@ -17,7 +17,7 @@ from student.models import (
 _MAX_NEW_TOKENS = 150
 
 # Number of top-ranked chunks concatenated as context for each answer.
-_NUM_CHUNKS = 2
+_NUM_CHUNKS = 1
 
 # Maximum number of tokens in the model's context window (prompt + answer).
 _N_CTX = 2048
@@ -546,7 +546,9 @@ class Generator:
 
         os.makedirs(os.path.dirname(save_directory), exist_ok=True)
 
-        if save_directory.endswith("/") or os.path.isdir(save_directory):
+        save_dir = save_directory
+        if save_dir.endswith("/") or (
+         not save_dir.endswith("/") and not save_dir.endswith(".json")):
             os.makedirs(save_directory, exist_ok=True)
             file_path = os.path.join(save_directory, "dataset.json")
         else:

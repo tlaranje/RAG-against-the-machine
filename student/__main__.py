@@ -16,6 +16,9 @@ class Main:
         self.retriever = Retriever(self.indexer)
 
     def index(self, max_chunk_size: int = 2000) -> None:
+        if isinstance(max_chunk_size, bool):
+            max_chunk_size = 2000
+
         self.indexer.index(max_chunk_size=max_chunk_size)
         print(
             "\n[cyan]Ingestion complete! Indices saved "
@@ -25,7 +28,10 @@ class Main:
     def search_dataset(
         self, dataset_path: str, k: int = 1, save_directory: str = SAVE_DIRR
     ) -> None:
-        self.retriever.search_dataset(dataset_path, k, save_directory)
+        if k <= 0:
+            raise ValueError("K must be positive int!")
+        if isinstance(k, int):
+            self.retriever.search_dataset(dataset_path, k, save_directory)
 
     def search(self, prompt: str, k: int = 1) -> None:
         self.indexer.load()

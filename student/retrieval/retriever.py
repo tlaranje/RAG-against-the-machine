@@ -2,6 +2,7 @@ from typing import TYPE_CHECKING, Any
 from collections import defaultdict
 from student.utils import bar
 from pathlib import Path
+from rich import print
 import json
 import os
 import re
@@ -388,7 +389,7 @@ class Retriever:
         return sorted(merged, key=lambda x: x["_score"], reverse=True)
 
     def search(
-        self, prompt: str, k: int = 1, index_type: str = "both"
+        self, prompt: str, k: int, index_type: str = "both"
     ) -> list[dict[str, Any]]:
         """
         Executes full retrieval using query expansion options.
@@ -494,13 +495,14 @@ class Retriever:
             ))
 
         # Check if target is an explicit directory path or a target filename.
-        if save_dir.endswith("/") or os.path.isdir(save_dir):
+        if save_dir.endswith("/") or (
+         not save_dir.endswith("/") and not save_dir.endswith(".json")):
             os.makedirs(save_dir, exist_ok=True)
             file_path = os.path.join(save_dir, "dataset.json")
         else:
             os.makedirs(os.path.dirname(save_dir), exist_ok=True)
             file_path = save_dir
-
+        print(f"[bold green]File save on {file_path} [/bold green]")
         with bar(desc="Saving", color="cyan") as pbar:
             s_res = StudentSearchResults(search_results=results, k=k)
             with open(file_path, "w") as fd:
