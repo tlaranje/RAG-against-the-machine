@@ -3,7 +3,7 @@
 #                                                         :::      ::::::::    #
 #    Makefile                                           :+:      :+:    :+:    #
 #                                                     +:+ +:+         +:+      #
-#    By: tlaranje <tlaranje@student.42porto.com>    +#+  +:+       +#+         #
+#    By: tlaranje <tlaranje@src.42porto.com>    +#+  +:+       +#+         #
 #                                                 +#+#+#+#+#+   +#+            #
 #    Created: 2026/02/26 12:06:51 by tlaranje          #+#    #+#              #
 #    Updated: 2026/04/29 10:42:53 by tlaranje         ###   ########.fr        #

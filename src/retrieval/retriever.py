@@ -1,19 +1,19 @@
 from typing import TYPE_CHECKING, Any
 from collections import defaultdict
-from student.utils import bar
+from src.utils import bar
 from pathlib import Path
 from rich import print
 import json
 import os
 import re
 
-from student.models import (
+from src.models import (
     MinimalSearchResults, MinimalSource,
     RagDataset, StudentSearchResults
 )
 
 if TYPE_CHECKING:
-    from student.ingestion import Indexer
+    from src.ingestion import Indexer
 
 # Query Expansion Helpers
 

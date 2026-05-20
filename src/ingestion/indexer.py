@@ -1,13 +1,13 @@
 from typing import Any, TYPE_CHECKING
-from student.ingestion import Chunker
-from student.utils import bar
+from src.ingestion import Chunker
+from src.utils import bar
 from Stemmer import Stemmer
 import bm25s
 import json
 import os
 
 if TYPE_CHECKING:
-    from student.ingestion import Parser
+    from src.ingestion import Parser
 
 
 def is_code_file(path: str) -> bool:

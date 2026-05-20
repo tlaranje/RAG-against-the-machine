@@ -1,6 +1,6 @@
 from contextlib import redirect_stderr
-from student.ingestion import Chunker
-from student.utils import bar
+from src.ingestion import Chunker
+from src.utils import bar
 from llama_cpp import Llama
 from typing import Any
 from rich import print
@@ -8,7 +8,7 @@ import time
 import json
 import os
 import re
-from student.models import (
+from src.models import (
     MinimalAnswer, StudentSearchResults, StudentSearchResultsAndAnswer,
     MinimalSearchResults
 )
@@ -438,7 +438,7 @@ class Generator:
         return prompts
 
     def answer_dataset(
-        self, student_search_results_path: str, save_directory: str,
+        self, src_search_results_path: str, save_directory: str,
     ) -> None:
         """
         Run batch inference over a retrieval-results JSON file.
@@ -451,13 +451,13 @@ class Generator:
         collected and printed as a summary after all batches complete.
 
         Args:
-            student_search_results_path: Path to the input JSON file
+            src_search_results_path: Path to the input JSON file
                 produced by the retrieval stage.
             save_directory: Destination path for the output JSON file.
                 Parent directories are created automatically.
         """
         # 1. Load and validate the input data
-        with open(student_search_results_path, "r") as fd:
+        with open(src_search_results_path, "r") as fd:
             data = json.load(fd)
 
         search_data = StudentSearchResults.model_validate(data)

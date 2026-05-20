@@ -1,4 +1,4 @@
-from student.models import StudentSearchResults, RagDataset, AnsweredQuestion
+from src.models import StudentSearchResults, RagDataset, AnsweredQuestion
 import json
 
 

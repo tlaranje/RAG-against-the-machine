@@ -2,10 +2,10 @@ import traceback
 
 import fire
 from rich import print
-from student.evaluation import Evaluator
-from student.generation import Generator
-from student.ingestion import Indexer, Parser
-from student.retrieval import Retriever
+from src.evaluation import Evaluator
+from src.generation import Generator
+from src.ingestion import Indexer, Parser
+from src.retrieval import Retriever
 
 SAVE_DIRR = "data/output/"
 
@@ -95,27 +95,27 @@ class Main:
 
     def answer_dataset(
         self,
-        student_search_results_path: str,
+        src_search_results_path: str,
         save_directory: str = "data/output/search_results_and_answer"
     ) -> None:
         """
         Generates structured answers for a file of search outputs.
 
         Args:
-            student_search_results_path: Path to generated search results.
+            src_search_results_path: Path to generated search results.
             save_directory: Directory where output JSON answers are saved.
         """
         generator = Generator()
-        generator.answer_dataset(student_search_results_path, save_directory)
+        generator.answer_dataset(src_search_results_path, save_directory)
 
     def evaluate(
-        self, student_answer_path: str, dataset_path: str, k: int = 1
+        self, src_answer_path: str, dataset_path: str, k: int = 1
     ) -> None:
         """
         Evaluates retrieval quality against ground-truth labels.
 
         Args:
-            student_answer_path: Path to the student search results file.
+            src_answer_path: Path to the src search results file.
             dataset_path: Path to ground-truth answers dataset JSON.
             k: Evaluates a single specific recall target parameter.
         """
@@ -123,7 +123,7 @@ class Main:
         ks = [1, 3, 5, 10]
         evaluation = Evaluator()
         for ki in ks:
-            recall = evaluation.evaluate(student_answer_path, dataset_path, ki)
+            recall = evaluation.evaluate(src_answer_path, dataset_path, ki)
             print(f"Recall@{ki}: {recall:.3f}")
 
 

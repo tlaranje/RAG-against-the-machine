@@ -1,5 +1,5 @@
 from langchain_text_splitters import Language, RecursiveCharacterTextSplitter
-from student.models import MinimalSource
+from src.models import MinimalSource
 from typing import Any
 import re
 import os
@@ -213,7 +213,7 @@ class Chunker:
             content: Full text content of the file.
             f_type: Lowercase file extension (e.g. ``"py"``, ``"md"``).
             path: File path used to build unique chunk IDs and to populate
-                :class:`~student.models.MinimalSource` metadata.
+                :class:`~src.models.MinimalSource` metadata.
 
         Returns:
             Dict mapping ``"<path>:<start>:<end>:<index>"`` keys to::
