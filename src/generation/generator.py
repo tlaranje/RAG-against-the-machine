@@ -10,7 +10,7 @@ import os
 import re
 from src.models import (
     MinimalAnswer, StudentSearchResults, StudentSearchResultsAndAnswer,
-    MinimalSearchResults
+    MinimalSearchResults, MinimalSource
 )
 
 # Maximum number of new tokens the model may produce per answer.
@@ -350,34 +350,33 @@ class Generator:
             + "Answer:"
         )
 
-    def answer(self, question: str, context: str) -> None:
+    def answer(self, question: str, sources: list[MinimalSource]) -> None:
         """
         Answer a single question and print the result to stdout.
-
-        Chunks ``context``, uses the first two chunks, builds a prompt,
-        runs inference, and pretty-prints the question, answer, and
-        elapsed time using Rich markup.
+        Wraps the context into a MinimalSearchResults object and reuses
+        the same _prepare_batch pipeline as answer_dataset.
 
         Args:
             question: The natural-language question to answer.
-            context: Raw context string (will be chunked internally).
+            context: Raw context string (will be treated as a single source).
         """
         import threading
 
-        chunks = self.chunker.chunk_text(context)
+        fake_result = MinimalSearchResults(
+            question_id="interactive",
+            question_str=question,
+            retrieved_sources=sources,
+        )
 
-        # Fall back to the original context when chunking yields nothing
-        # (e.g., very short inputs below the minimum chunk threshold).
-        if not chunks:
-            chunks = [context]
+        prompts = self._prepare_batch([fake_result])
+        prompt = prompts[0]
 
-        # Concatenate the first two chunks to stay within token budget
-        # while maximising the amount of evidence provided.
-        combined_context = " ".join(chunks[:_NUM_CHUNKS])
-        prompt = self.build_prompt(question, combined_context)
+        if not prompt.strip():
+            print(f"[bold cyan]Question:[/bold cyan] {question}")
+            print("[bold green]Answer:[/bold green] Not found in context.")
+            return
 
         progress_bar = bar(desc="Answer question: ", color="green", total=100)
-
         llm_response = []
 
         def run_inference():
@@ -400,9 +399,7 @@ class Generator:
 
         raw, _, elapsed = llm_response[0]
 
-        result = (
-            clean_answer(raw) if raw else "Not found in context."
-        )
+        result = clean_answer(raw) if raw else "Not found in context."
         if not result:
             result = "Not found in context."
 

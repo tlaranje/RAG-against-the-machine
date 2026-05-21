@@ -1,5 +1,6 @@
 from src.ingestion import Indexer, Parser
 from src.generation import Generator
+from src.models import MinimalSource
 from src.retrieval import Retriever
 from rich import print
 import traceback
@@ -100,23 +101,30 @@ class Main:
             k: Number of reference contexts to grab.
         """
         self.indexer.load()
-
         prompt = (PROMPT if isinstance(prompt, bool) else prompt)
         k = (K if isinstance(k, bool) else k)
 
         # Step 1: Search the DB for raw text or code snippets
         sources = self.retriever.search(prompt, k=k)
 
-        # Step 2: Extract text from chunks, ignoring any empty contents
-        context = "\n".join(
-            s["source"]["content"] for s in sources if s.get("content")
-        )
+        # Step 2: Build MinimalSource objects directly from search results
+        minimal_sources = [
+            MinimalSource(
+                file_path=s.get("file_path", "unknown"),
+                first_character_index=s.get("first_character_index", 0),
+                last_character_index=s.get("last_character_index", 0),
+                content=(
+                    s.get("content") or s.get("source", {}).get("content", "")
+                ),
+            )
+            for s in sources
+        ]
 
         # Step 3: Initialize Generator and query the local model
         generator = Generator()
         generator.answer(
             question=prompt,
-            context=context,
+            sources=minimal_sources,
         )
 
     def answer_dataset(
