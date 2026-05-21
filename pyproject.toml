@@ -5,22 +5,13 @@ description = "RAG project at 42"
 readme = "README.md"
 requires-python = ">=3.10"
 dependencies = [
-    "transformers>=4.40.0",
-    "torch>=2.2.0",
     "tqdm>=4.66.0",
     "fire>=0.6.0",
     "langchain>=0.2.0",
-    "langchain-community>=0.2.0",
     "langchain-text-splitters>=0.2.0",
-    "beautifulsoup4>=4.12.0",
-    "chromadb>=0.4.0",
     "bm25s>=0.1.10",
-    "dspy-ai>=2.4.0",
     "pydantic>=2.8.2",
     "rich>=13.8.1",
-    "autopep8>=2.3.2",
-    "accelerate>=1.1.0",
-    "bitsandbytes>=0.46.1",
     "llama-cpp-python>=0.2.0",
     "PyStemmer>=3.0.0"
 ]
@@ -33,3 +24,10 @@ dev = [
     "types-setuptools>=82.0.0.20260408",
     "types-docopt>=0.6.11",
 ]
+
+[build-system]
+requires = ["setuptools>=61.0.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.package-dir]
+student = "src"

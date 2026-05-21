@@ -44,30 +44,23 @@ class Indexer:
         self.parser = parser
         self.base_path = base_path
 
-        # Dual-index architecture separating docs and code.
-        self.bm25_docs = bm25s.BM25()
-        self.bm25_code = bm25s.BM25()
+        self.bm25 = bm25s.BM25()
 
         self.metadata_docs: list[dict[str, Any]] = []
         self.metadata_code: list[dict[str, Any]] = []
 
         self.stemmer = Stemmer("english")
 
-        # Lambda tokenizers used during indexing and re-used by the retriever.
-        # For docs: removes English stopwords and applies word stemming.
-        self.tokenizer_docs: Any = lambda texts: bm25s.tokenize(
-            texts, stopwords="en", stemmer=self.stemmer.stemWords
-        )
-        # For code: preserves variables/syntax exactly as they appear.
-        self.tokenizer_code: Any = lambda texts: bm25s.tokenize(
-            texts, stopwords=[], stemmer=lambda x: x
+        self.tokenizer: Any = lambda texts: bm25s.tokenize(
+            texts, stopwords="en"
         )
 
-        # File paths where artifacts will be saved or loaded.
-        self.docs_index_path = f"{base_path}/bm25_index_docs"
-        self.code_index_path = f"{base_path}/bm25_index_code"
+        self.index_path = f"{base_path}/bm25_index"
         self.docs_metadata_path = f"{base_path}/chunks/metadata_docs.json"
         self.code_metadata_path = f"{base_path}/chunks/metadata_code.json"
+        self.metadata_all_path = f"{base_path}/chunks/metadata_all.json"
+
+        self.metadata_all: list[dict[str, Any]] = []
 
     def index(self, max_chunk_size: int = 1500) -> None:
         """
@@ -106,23 +99,19 @@ class Indexer:
 
         # Step 2: Convert structural strings into token streams.
         with bar(desc="Tokenizing", color="blue") as pbar:
-            docs_tokens: Any = self.tokenizer_docs(docs_texts)
-            code_tokens: Any = self.tokenizer_code(code_texts)
+            all_texts = docs_texts + code_texts
+            all_tokens: Any = self.tokenizer(all_texts)
             pbar.update(1)
 
         # Step 3: Fit the BM25 statistical matrix with the token datasets.
-        with bar(desc="Building Indexes", color="yellow") as pbar:
-            self.bm25_docs.index(docs_tokens)
-            self.bm25_code.index(code_tokens)
+        with bar(desc="Building Index", color="yellow") as pbar:
+            self.bm25.index(all_tokens)
             pbar.update(1)
 
         # Step 4: Serialize source positions into lightweight dictionaries.
-        self.metadata_docs = [
-            {"source": s.model_dump()} for s in docs_sources
-        ]
-        self.metadata_code = [
-            {"source": s.model_dump()} for s in code_sources
-        ]
+        self.metadata_docs = [{"source": s.model_dump()} for s in docs_sources]
+        self.metadata_code = [{"source": s.model_dump()} for s in code_sources]
+        self.metadata_all = self.metadata_docs + self.metadata_code
 
         os.makedirs(f"{self.base_path}/chunks", exist_ok=True)
 
@@ -132,27 +121,16 @@ class Indexer:
             pbar.update(1)
 
     def save(self) -> None:
-        """Saves matrix components and structured metadata onto the disk."""
-        self.bm25_docs.save(self.docs_index_path)
-        self.bm25_code.save(self.code_index_path)
-
+        self.bm25.save(self.index_path)
         with open(self.docs_metadata_path, "w") as fd:
             json.dump(self.metadata_docs, fd, indent=4)
-
         with open(self.code_metadata_path, "w") as fd:
             json.dump(self.metadata_code, fd, indent=4)
+        with open(self.metadata_all_path, "w") as fd:
+            json.dump(self.metadata_all, fd, indent=4)
 
     def load(self) -> None:
-        """Loads index models and associated schema definitions from files."""
-        # mmap=True uses memory-mapping to instantly read large indices
-        # without consuming excess RAM overhead.
-        self.bm25_docs = bm25s.BM25.load(self.docs_index_path, mmap=True)
-        self.bm25_code = bm25s.BM25.load(self.code_index_path, mmap=True)
-
-        if os.path.exists(self.docs_metadata_path):
-            with open(self.docs_metadata_path, "r") as fd:
-                self.metadata_docs = json.load(fd)
-
-        if os.path.exists(self.code_metadata_path):
-            with open(self.code_metadata_path, "r") as fd:
-                self.metadata_code = json.load(fd)
+        self.bm25 = bm25s.BM25.load(self.index_path, mmap=True)
+        if os.path.exists(self.metadata_all_path):
+            with open(self.metadata_all_path, "r") as fd:
+                self.metadata_all = json.load(fd)

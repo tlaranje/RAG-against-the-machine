@@ -41,11 +41,18 @@ install:
 		echo "Downloading $(MODEL_NAME)..."; \
 		curl -L $(MODEL_URL) -o $(MODEL_DIR)/$(MODEL_NAME); \
 	fi
-	@uv venv --python 3.12
 	@uv sync
+	@cd data/raw && unzip -n vllm-0.10.1.zip
+	@if [ ! -e .venv ]; then ln -s $(HOME)/sgoinfre/RAG/.venv .venv; fi
 
-run:
-	@$(CLEAR) && uv run python -m student
+TYPE ?= docs
+
+run: install
+	@$(CLEAR) && uv run python -m student index
+	@echo
+	@uv run python3 -m student search_dataset --dataset_path "data/datasets/UnansweredQuestions/dataset_$(TYPE)_public.json"
+	@echo
+	@uv run python -m student answer_dataset --student_search_results_path "data/output/search_results/dataset_$(TYPE)_public.json"
 
 debug:
 	@$(CLEAR) && uv run python -m pdb -m student

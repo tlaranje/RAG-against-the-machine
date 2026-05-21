@@ -1,7 +1,7 @@
 from contextlib import redirect_stderr
 from src.ingestion import Chunker
-from src.utils import bar
 from llama_cpp import Llama
+from src.utils import bar
 from typing import Any
 from rich import print
 import time
@@ -14,16 +14,16 @@ from src.models import (
 )
 
 # Maximum number of new tokens the model may produce per answer.
-_MAX_NEW_TOKENS = 150
+_MAX_NEW_TOKENS = 200
 
 # Number of top-ranked chunks concatenated as context for each answer.
-_NUM_CHUNKS = 1
+_NUM_CHUNKS = 2
 
 # Maximum number of tokens in the model's context window (prompt + answer).
 _N_CTX = 2048
 
 # Maximum number of characters per text chunk produced by the Chunker.
-_CHUNK_SIZE = 160
+_CHUNK_SIZE = 500
 
 # Number of tokens evaluated in parallel during prompt processing.
 _N_BATCH = 512
@@ -72,20 +72,17 @@ _RE_PREAMBLE = re.compile(
 )
 
 # Fenced and inline code blocks — irrelevant for factoid answers.
-_RE_CODE_BLOCK = re.compile(r"```[\s\S]*?```|`[^`\n]+`")
+# _RE_CODE_BLOCK = re.compile(r"```[\s\S]*?```|`[^`\n]+`")
 
 # Markdown hyperlinks: kept as "label (url)" for location questions,
 # collapsed to just "label" otherwise.
 _RE_MD_LINK = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")
 
-# Bare URLs are suppressed unless the question asks "where".
-_RE_URL = re.compile(r"https?://\S+")
-
 # ATX-style markdown headers (e.g., "## Section Title").
 _RE_MD_HEADER = re.compile(r"^#{1,6}\s+", re.MULTILINE)
 
 
-def clean_answer(text: str, question: str = "") -> str:
+def clean_answer(text: str) -> str:
     """
     Normalise raw model output into a clean, plain-text answer.
     The function applies a sequence of regex substitutions to remove
@@ -115,7 +112,7 @@ def clean_answer(text: str, question: str = "") -> str:
     text = _RE_PREAMBLE.sub("", text)
 
     # Inline/fenced code blocks are never useful in factoid answers.
-    text = _RE_CODE_BLOCK.sub("", text)
+    # text = _RE_CODE_BLOCK.sub("", text)
 
     # Strip leading "#" header markers.
     text = _RE_MD_HEADER.sub("", text)
@@ -365,6 +362,8 @@ class Generator:
             question: The natural-language question to answer.
             context: Raw context string (will be chunked internally).
         """
+        import threading
+
         chunks = self.chunker.chunk_text(context)
 
         # Fall back to the original context when chunking yields nothing
@@ -377,10 +376,32 @@ class Generator:
         combined_context = " ".join(chunks[:_NUM_CHUNKS])
         prompt = self.build_prompt(question, combined_context)
 
-        raw, _, elapsed = self.llm.generate_batch([prompt])[0]
+        progress_bar = bar(desc="Answer question: ", color="green", total=100)
+
+        llm_response = []
+
+        def run_inference():
+            res = self.llm.generate_batch([prompt])[0]
+            llm_response.append(res)
+
+        llm_thread = threading.Thread(target=run_inference)
+        llm_thread.start()
+
+        with progress_bar:
+            current_progress = 0
+            while llm_thread.is_alive():
+                if current_progress < 95:
+                    progress_bar.update(1)
+                    current_progress += 1
+                time.sleep(0.015)
+
+            if current_progress < 100:
+                progress_bar.update(100 - current_progress)
+
+        raw, _, elapsed = llm_response[0]
 
         result = (
-            clean_answer(raw, question) if raw else "Not found in context."
+            clean_answer(raw) if raw else "Not found in context."
         )
         if not result:
             result = "Not found in context."
@@ -432,13 +453,13 @@ class Generator:
                 prompts.append("")
                 continue
 
-            combined = " ".join(chunks)
+            combined = " ".join(chunks[:_NUM_CHUNKS])
             prompts.append(self.build_prompt(result.question_str, combined))
 
         return prompts
 
     def answer_dataset(
-        self, src_search_results_path: str, save_directory: str,
+        self, student_search_results_path: str, save_directory: str,
     ) -> None:
         """
         Run batch inference over a retrieval-results JSON file.
@@ -457,7 +478,7 @@ class Generator:
                 Parent directories are created automatically.
         """
         # 1. Load and validate the input data
-        with open(src_search_results_path, "r") as fd:
+        with open(student_search_results_path, "r") as fd:
             data = json.load(fd)
 
         search_data = StudentSearchResults.model_validate(data)
@@ -499,7 +520,7 @@ class Generator:
                 raw, timed_out, elapsed = raw_answers[i]
 
                 final_answer = (
-                    clean_answer(raw, result.question_str)
+                    clean_answer(raw)
                     if raw else "Not found in context."
                 )
                 if not final_answer:
@@ -549,11 +570,12 @@ class Generator:
         save_dir = save_directory
         if save_dir.endswith("/") or (
          not save_dir.endswith("/") and not save_dir.endswith(".json")):
-            os.makedirs(save_directory, exist_ok=True)
-            file_path = os.path.join(save_directory, "dataset.json")
+            os.makedirs(save_dir, exist_ok=True)
+            file_name = student_search_results_path.rsplit('/')[-1]
+            file_path = os.path.join(save_dir, file_name)
         else:
-            os.makedirs(os.path.dirname(save_directory), exist_ok=True)
-            file_path = save_directory
+            os.makedirs(os.path.dirname(save_dir), exist_ok=True)
+            file_path = save_dir
 
         with open(file_path, "w") as fd:
             json.dump(
@@ -573,5 +595,5 @@ class Generator:
 
         print(
             f"[bold green]Answers saved to:"
-            f" {save_directory}[/bold green]"
+            f" {file_path}[/bold green]"
         )

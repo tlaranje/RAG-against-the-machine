@@ -1,13 +1,19 @@
-import traceback
-
-import fire
-from rich import print
-from src.evaluation import Evaluator
-from src.generation import Generator
 from src.ingestion import Indexer, Parser
+from src.generation import Generator
 from src.retrieval import Retriever
+from rich import print
+import traceback
+import fire
 
-SAVE_DIRR = "data/output/"
+DATASET_PATH = "data/datasets/UnansweredQuestions/dataset_docs_public.json"
+SAVE_DIRR = "data/output/search_results"
+SAVE_DIRR_ANSWERS = "data/output/search_results_and_answer"
+K = 10
+MAX_CHUNK_SIZE = 2000
+PROMPT = "How to configure OpenAI server?"
+STUDENT_SEARCH_RESULTS_PATH = (
+    "data/output/search_results/dataset_docs_public.json"
+)
 
 
 class Main:
@@ -26,19 +32,40 @@ class Main:
         Args:
             max_chunk_size: Maximum character length constraint for chunks.
         """
-        # Python Fire sometimes reads numeric parameters as boolean flags
-        # if input parsing is ambiguous. This safe-check restores the default.
-        if isinstance(max_chunk_size, bool):
-            max_chunk_size = 2000
-
-        self.indexer.index(max_chunk_size=max_chunk_size)
-        print(
-            "\n[cyan]Ingestion complete! Indices saved "
-            "under data/processed/[/cyan]\n"
+        max_chunk_size = (
+            MAX_CHUNK_SIZE
+            if isinstance(max_chunk_size, bool) else max_chunk_size
         )
 
+        if max_chunk_size <= 0:
+            raise ValueError("max_chunk_size must be positive int!")
+
+        self.indexer.index(max_chunk_size=max_chunk_size)
+
+        print(
+            "[cyan]Ingestion complete! Indices saved "
+            "under data/processed/[/cyan]"
+        )
+
+    def search(self, prompt: str = PROMPT, k: int = K) -> None:
+        """
+        Performs a direct query search and prints matched code chunks.
+
+        Args:
+            prompt: Text string containing user search terms.
+            k: Max amount of matched documents to show.
+        """
+        self.indexer.load()
+
+        prompt = (PROMPT if isinstance(prompt, bool) else prompt)
+        k = (K if isinstance(k, bool) else k)
+
+        results = self.retriever.search(prompt, k=k)
+        print(results)
+
     def search_dataset(
-        self, dataset_path: str, k: int = 1, save_directory: str = SAVE_DIRR
+        self, dataset_path: str = DATASET_PATH,
+        k: int = K, save_directory: str = SAVE_DIRR
     ) -> None:
         """
         Queries the retrieval database using questions from a dataset file.
@@ -51,32 +78,31 @@ class Main:
         Raises:
             ValueError: If the k parameter is non-positive.
         """
+        dataset_path = (
+            DATASET_PATH if isinstance(dataset_path, bool) else dataset_path
+        )
+        k = (K if isinstance(k, bool) else k)
+        save_directory = (
+            SAVE_DIRR if isinstance(save_directory, bool) else save_directory
+        )
+
         if k <= 0:
             raise ValueError("K must be positive int!")
-        if isinstance(k, int):
-            self.retriever.search_dataset(dataset_path, k, save_directory)
 
-    def search(self, prompt: str, k: int = 1) -> None:
+        self.retriever.search_dataset(dataset_path, k, save_directory)
+
+    def answer(self, prompt: str = PROMPT, k: int = K) -> None:
         """
-        Performs a direct query search and prints matched code chunks.
-
-        Args:
-            prompt: Text string containing user search terms.
-            k: Max amount of matched documents to show.
-        """
-        # Memory-map the indices to perform lightning-fast searches.
-        self.indexer.load()
-        results = self.retriever.search(prompt, k=k)
-        print(results)
-
-    def answer(self, prompt: str, k: int = 10) -> None:
-        """Answers a single query by fetching context and feeding it to LLM.
+        Answers a single query by fetching context and feeding it to LLM.
 
         Args:
             prompt: Question asked by the user.
             k: Number of reference contexts to grab.
         """
         self.indexer.load()
+
+        prompt = (PROMPT if isinstance(prompt, bool) else prompt)
+        k = (K if isinstance(k, bool) else k)
 
         # Step 1: Search the DB for raw text or code snippets
         sources = self.retriever.search(prompt, k=k)
@@ -94,9 +120,8 @@ class Main:
         )
 
     def answer_dataset(
-        self,
-        src_search_results_path: str,
-        save_directory: str = "data/output/search_results_and_answer"
+        self, student_search_results_path: str = STUDENT_SEARCH_RESULTS_PATH,
+        save_directory: str = SAVE_DIRR_ANSWERS
     ) -> None:
         """
         Generates structured answers for a file of search outputs.
@@ -105,26 +130,17 @@ class Main:
             src_search_results_path: Path to generated search results.
             save_directory: Directory where output JSON answers are saved.
         """
+        student_search_results_path = (
+            STUDENT_SEARCH_RESULTS_PATH
+            if isinstance(student_search_results_path, bool) else
+            student_search_results_path
+        )
+        save_directory = (
+            SAVE_DIRR_ANSWERS if isinstance(save_directory, bool) else
+            save_directory
+        )
         generator = Generator()
-        generator.answer_dataset(src_search_results_path, save_directory)
-
-    def evaluate(
-        self, src_answer_path: str, dataset_path: str, k: int = 1
-    ) -> None:
-        """
-        Evaluates retrieval quality against ground-truth labels.
-
-        Args:
-            src_answer_path: Path to the src search results file.
-            dataset_path: Path to ground-truth answers dataset JSON.
-            k: Evaluates a single specific recall target parameter.
-        """
-        # Evaluates typical search target checkpoints for detailed reporting.
-        ks = [1, 3, 5, 10]
-        evaluation = Evaluator()
-        for ki in ks:
-            recall = evaluation.evaluate(src_answer_path, dataset_path, ki)
-            print(f"Recall@{ki}: {recall:.3f}")
+        generator.answer_dataset(student_search_results_path, save_directory)
 
 
 if __name__ == "__main__":
