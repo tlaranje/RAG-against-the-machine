@@ -3,7 +3,6 @@ from src.generation import Generator
 from src.models import MinimalSource
 from src.retrieval import Retriever
 from rich import print
-import traceback
 import fire
 
 DATASET_PATH = "data/datasets/UnansweredQuestions/dataset_docs_public.json"
@@ -158,5 +157,4 @@ if __name__ == "__main__":
     except Exception as e:
         # Ensure we capture traceback information safely on standard error
         # to avoid silent failures or unreadable CLI application crashes.
-        traceback.print_exc()
         print(f"[bold red]Error:\n    {e}[/bold red]")
