@@ -41,9 +41,9 @@ install:
 		echo "Downloading $(MODEL_NAME)..."; \
 		curl -L $(MODEL_URL) -o $(MODEL_DIR)/$(MODEL_NAME); \
 	fi
+	@if [ ! -e .venv ]; then ln -s $(HOME)/sgoinfre/RAG/.venv .venv; fi
 	@uv sync
 	@cd data/raw && unzip -n vllm-0.10.1.zip
-	@if [ ! -e .venv ]; then ln -s $(HOME)/sgoinfre/RAG/.venv .venv; fi
 
 TYPE ?= docs
 
